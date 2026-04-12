@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- planilha base -->
+  <rect x="3" y="2" width="20" height="26" rx="2" fill="#1e293b"/>
+  <rect x="5" y="4" width="16" height="22" rx="1" fill="#0f172a"/>
+  <!-- linhas da planilha -->
+  <rect x="7" y="8"  width="10" height="2" rx="1" fill="#4ade80"/>
+  <rect x="7" y="12" width="10" height="2" rx="1" fill="#94a3b8"/>
+  <rect x="7" y="16" width="7"  height="2" rx="1" fill="#94a3b8"/>
+  <rect x="7" y="20" width="9"  height="2" rx="1" fill="#94a3b8"/>
+  <!-- seta de conversão -->
+  <circle cx="24" cy="24" r="7" fill="#4ade80"/>
+  <path d="M21 24h5M24 21l3 3-3 3" stroke="#0f172a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
