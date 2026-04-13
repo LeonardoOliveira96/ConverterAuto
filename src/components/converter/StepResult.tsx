@@ -95,6 +95,39 @@ export function StepResult({ result, processedData, fileName, onReset }: StepRes
         <p className="text-muted-foreground mt-2">Sua planilha foi convertida com sucesso para o padrão do ERP.</p>
       </Card>
 
+      {/* Resumo de processamento */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+      >
+        <Card className="bg-card p-6 border-l-4 border-l-emerald-500">
+          <div className="space-y-2 text-sm md:text-base">
+            <p className="text-foreground">
+              <span className="font-semibold">Total de linhas:</span> {result.totalRows.toLocaleString('pt-BR')}
+            </p>
+            <p className="text-emerald-600 dark:text-emerald-400">
+              <span className="font-semibold">✓ Processadas:</span> {result.processedRows.toLocaleString('pt-BR')}
+            </p>
+            {result.removedRows > 0 && (
+              <p className="text-amber-600 dark:text-amber-400">
+                <span className="font-semibold">⊗ Removidas:</span> {result.removedRows.toLocaleString('pt-BR')}
+              </p>
+            )}
+            {(result.charsRemoved ?? 0) > 0 && (
+              <p className="text-violet-600 dark:text-violet-400">
+                <span className="font-semibold">✨ Caracteres removidos:</span> {(result.charsRemoved ?? 0).toLocaleString('pt-BR')}
+              </p>
+            )}
+            {result.errors.length > 0 && (
+              <p className="text-destructive">
+                <span className="font-semibold">⚠ Erros encontrados:</span> {result.errors.length.toLocaleString('pt-BR')}
+              </p>
+            )}
+          </div>
+        </Card>
+      </motion.div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map((s, i) => (
           <motion.div
@@ -115,6 +148,29 @@ export function StepResult({ result, processedData, fileName, onReset }: StepRes
           </motion.div>
         ))}
       </div>
+
+      {/* Detalhes de caracteres removidos */}
+      {result.charTypes && Object.keys(result.charTypes).length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+        >
+          <Card className="bg-card p-6">
+            <h3 className="font-heading font-semibold text-lg text-foreground mb-4">Tipos de caracteres removidos</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {Object.entries(result.charTypes).map(([type, count]) => (
+                <div key={type} className="bg-muted/50 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-foreground">
+                    <AnimatedNumber value={count} />
+                  </p>
+                  <p className="text-xs text-muted-foreground capitalize mt-1">{type}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </motion.div>
+      )}
 
       <div className="flex flex-wrap justify-center gap-4">
         <Button size="lg" onClick={handleDownload} className="gap-2">
