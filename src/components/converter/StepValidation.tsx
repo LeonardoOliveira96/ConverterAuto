@@ -60,6 +60,8 @@ import {
 function pipelineProductDescription(raw: string, options: CleaningOptions): string {
   let val = String(raw ?? '');
   if (options.removeSpecialChars) {
+    // Normalizar primeiro para preservar letra sem acento
+    val = val.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const { result } = removeDescriptionHashtags(val);
     val = applySpecialCharsClean(result);
   }
@@ -253,9 +255,12 @@ export function StepValidation({
           let hashtagCount = 0;
           let baseVal = val;
 
+          // Normalizar primeiro para preservar letra sem acento
+          baseVal = baseVal.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
           // Para descrição: remover hashtags (#palavra) antes da limpeza geral
           if (field.name === 'Descrição do Produto') {
-            const { result, count } = removeDescriptionHashtags(val);
+            const { result, count } = removeDescriptionHashtags(baseVal);
             hashtagCount = count;
             baseVal = result;
           }
@@ -563,7 +568,7 @@ export function StepValidation({
   const cleaningItems: { key: keyof CleaningOptions; label: string; description: string }[] = [
     { key: 'removeEmptyDescription', label: 'Remover linhas com descrição vazia', description: 'Linhas sem descrição serão excluídas do resultado' },
     { key: 'removeEmptyRequired', label: 'Remover linhas com campos obrigatórios vazios', description: 'Linhas com campos obrigatórios em branco serão excluídas' },
-    { key: 'removeSpecialChars', label: 'Remover caracteres especiais dos campos', description: 'Remove apenas os caracteres especiais, mantendo a linha' },
+    { key: 'removeSpecialChars', label: 'Remover caracteres especiais dos campos', description: 'Remove acentos e caracteres especiais, mantendo as letras (ã → a, é → e)' },
     { key: 'normalizeText', label: 'Normalizar texto (remover acentos)', description: 'Remove acentos dos textos, mantendo a linha' },
     { key: 'ignoreUnmapped', label: 'Ignorar colunas não mapeadas', description: 'Colunas sem mapeamento não serão incluídas' },
   ];
