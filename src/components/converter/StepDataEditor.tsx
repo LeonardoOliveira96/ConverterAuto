@@ -258,27 +258,6 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
                             animate={{ opacity: 1, y: 0 }}
                             className="p-6 space-y-4"
                         >
-                            {/* Info e ação para linhas vazias */}
-                            {countEmptyRows > 0 && (
-                                <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 flex items-center justify-between gap-3">
-                                    <div className="flex items-center gap-2">
-                                        <Badge variant="destructive">{countEmptyRows}</Badge>
-                                        <span className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                                            {countEmptyRows === 1 ? 'linha vazia encontrada' : 'linhas vazias encontradas'}
-                                        </span>
-                                    </div>
-                                    <Button
-                                        size="sm"
-                                        variant="destructive"
-                                        onClick={handleDeleteEmptyRows}
-                                        className="gap-1.5"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                        Deletar linhas vazias
-                                    </Button>
-                                </div>
-                            )}
-
                             <div className="border rounded-lg overflow-auto bg-card">
                                 <table className="w-full border-collapse text-sm">
                                     <thead>
