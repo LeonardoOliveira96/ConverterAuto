@@ -5,13 +5,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { motion } from 'framer-motion';
-import { AlertTriangle, Sparkles } from 'lucide-react';
+import { AlertTriangle, Sparkles, Info } from 'lucide-react';
+import type { SpreadsheetRow } from '@/lib/converter-types';
 
 interface StepColumnMappingProps {
   sheetType: SheetType;
   sourceColumns: string[];
   mapping: Record<string, string>;
   onMappingChange: (mapping: Record<string, string>) => void;
+  sourceData?: SpreadsheetRow[];
 }
 
 function toExcelCol(index: number): string {
@@ -25,7 +27,7 @@ function toExcelCol(index: number): string {
   return col;
 }
 
-export function StepColumnMapping({ sheetType, sourceColumns, mapping, onMappingChange }: StepColumnMappingProps) {
+export function StepColumnMapping({ sheetType, sourceColumns, mapping, onMappingChange, sourceData }: StepColumnMappingProps) {
   const fields = useMemo(() => getFieldsForType(sheetType), [sheetType]);
 
   // Tracks which fields were filled by auto-suggest vs manually by the user
@@ -40,6 +42,17 @@ export function StepColumnMapping({ sheetType, sourceColumns, mapping, onMapping
     sourceColumns.forEach((col, i) => { map[col] = toExcelCol(i); });
     return map;
   }, [sourceColumns]);
+
+  useEffect(() => {
+    console.log('[COLUMN MAPPING DEBUG]', {
+      sourceColumns: sourceColumns.map((col, i) => `[${i}] ${col}`),
+      currentMapping: Object.entries(mapping).map(([field, col]) => `${field} ← ${col}`),
+      sourceDataExample: sourceData?.slice(0, 2).map((row, idx) => ({
+        row: idx + 2,
+        values: row.map((val, colIdx) => `[${colIdx}] ${val}`)
+      }))
+    });
+  }, [mapping, sourceColumns, sourceData]);
 
   useEffect(() => {
     if (Object.keys(mapping).length === 0) {
@@ -90,6 +103,29 @@ export function StepColumnMapping({ sheetType, sourceColumns, mapping, onMapping
             )}
           </div>
         </div>
+
+        {/* Preview Card - Mostra as colunas do arquivo com dados de exemplo */}
+        <Card className="bg-blue-500/5 border-blue-500/20 p-4">
+          <div className="flex items-start gap-3">
+            <Info className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <h3 className="font-semibold text-sm text-foreground mb-2">Colunas do seu arquivo:</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                {sourceColumns.map((col, idx) => (
+                  <div key={idx} className="text-xs">
+                    <div className="font-mono font-bold text-blue-600 dark:text-blue-400">{toExcelCol(idx)}</div>
+                    <div className="font-semibold text-foreground truncate">{col}</div>
+                    {sourceData && sourceData.length > 0 && (
+                      <div className="text-muted-foreground text-[11px] truncate">
+                        Ex: {String(sourceData[0]?.[idx] ?? '—').substring(0, 20)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Card>
 
         <Card className="bg-card overflow-hidden">
           {/* Header row — Excel-style: gray corner + column headers */}
