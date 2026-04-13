@@ -46,19 +46,6 @@ export function StepUpload({ onFileLoaded, fileInfo }: StepUploadProps) {
       const headers = (cleanedJson[0] || []).map(String);
       const rows = cleanedJson.slice(1);
 
-      // Debug: Log dados brutos
-      console.log('[FILE LOAD - RAW DATA]', {
-        fileName: file.name,
-        headerCount: headers.length,
-        headers: headers.map((h, i) => `[${i}] ${h}`),
-        maxColumnsFound: maxCols,
-        firstFiveRows: rows.slice(0, 5).map((r, i) => ({
-          row: i + 2,
-          colCount: (r as SpreadsheetRow).length,
-          data: (r as SpreadsheetRow).map((cell, colIdx) => `[${colIdx}] ${cell === '' ? '(vazio)' : cell}`)
-        }))
-      });
-
       onFileLoaded({ fileName: file.name, headers, rows, rawData: cleanedJson });
     };
     reader.readAsArrayBuffer(file);

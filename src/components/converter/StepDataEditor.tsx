@@ -35,22 +35,6 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange }:
     const [localHeaders, setLocalHeaders] = useState<string[]>(headers);
     const [hasChanges, setHasChanges] = useState(false);
 
-    // Debug: Log dados ao abrir editor
-    useEffect(() => {
-        console.log('[STEP DATA EDITOR - INIT]', {
-            headers: localHeaders.map((h, i) => `[${i}] ${h}`),
-            rowCount: localRows.length,
-            firstThreeRows: localRows.slice(0, 3).map((r, idx) => ({
-                row: idx + 2,
-                data: r.map((cell, colIdx) => ({
-                    column: `[${colIdx}] ${localHeaders[colIdx]}`,
-                    value: String(cell ?? '(vazio)')
-                }))
-            }))
-        });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen]);
-
     const handleCellClick = (rowIdx: number, colIdx: number) => {
         if (rowIdx === -1) {
             // Header edit
@@ -154,31 +138,6 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange }:
                             animate={{ opacity: 1, y: 0 }}
                             className="p-6 space-y-4"
                         >
-                            {/* Debug Card - Mostra estrutura dos dados */}
-                            <Card className="bg-amber-500/5 border-amber-500/20 p-4">
-                                <div className="text-xs space-y-2">
-                                    <div className="font-mono font-bold text-amber-700 dark:text-amber-400">ℹ️ Estrutura dos Dados:</div>
-                                    <div className="text-muted-foreground">
-                                        <div>Colunas ({localHeaders.length}): {localHeaders.map((h, i) => `[${i}] ${h}`).join(` | `)}</div>
-                                        <div className="mt-2 border-t border-amber-500/20 pt-2">
-                                            Primeiras 5 linhas (conferir dados vazios):
-                                            {localRows.slice(0, 5).map((row, idx) => (
-                                                <div key={idx} className="font-mono text-[10px] mt-1 text-foreground bg-secondary/30 p-1 rounded">
-                                                    <div>Linha {idx + 2}:</div>
-                                                    <div className="ml-2">
-                                                        {(row as SpreadsheetRow).map((val, colIdx) => (
-                                                            <span key={colIdx} className={val === '' || !val ? 'text-orange-500' : ''}>
-                                                                [{colIdx}]{val === '' || !val ? '(vazio)' : String(val).substring(0, 15)} {colIdx < (row as SpreadsheetRow).length - 1 ? '| ' : ''}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            </Card>
-
                             <div className="border rounded-lg overflow-auto bg-card">
                                 <table className="w-full border-collapse text-sm">
                                     <thead>
