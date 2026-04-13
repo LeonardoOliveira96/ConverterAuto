@@ -18,10 +18,14 @@ import {
     Trash2,
     Edit2,
     RotateCcw,
+    Sparkles,
+    ScanLine,
+    Check,
 } from 'lucide-react';
 import type { SpreadsheetRow } from '@/lib/converter-types';
 import type { SheetType } from '@/lib/erp-fields';
 import { getFieldsForType, autoSuggestMapping } from '@/lib/erp-fields';
+import { applySpecialCharsClean, categorizeSpecialCharsInString } from '@/lib/preview-alterations';
 
 interface StepDataEditorProps {
     headers: string[];
@@ -44,12 +48,16 @@ function toExcelCol(index: number): string {
 
 export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, sheetType }: StepDataEditorProps) {
     const [isOpen, setIsOpen] = useState(false);
+    const [isCleanerOpen, setIsCleanerOpen] = useState(false);
+    const [isNcmEditorOpen, setIsNcmEditorOpen] = useState(false);
     const [editingCell, setEditingCell] = useState<{ row: number; col: number } | null>(null);
     const [cellValue, setCellValue] = useState('');
     const [localRows, setLocalRows] = useState<SpreadsheetRow[]>(rows);
     const [localHeaders, setLocalHeaders] = useState<string[]>(headers);
     const [originalHeaders, setOriginalHeaders] = useState<string[]>(headers);
     const [hasChanges, setHasChanges] = useState(false);
+    const [ncmColumnHeader, setNcmColumnHeader] = useState<string | null>(null);
+    const [ncmEdits, setNcmEdits] = useState<Record<number, string>>({});
 
     const systemFields = useMemo(() =>
         sheetType ? getFieldsForType(sheetType).map(f => f.name) : [],
@@ -136,6 +144,12 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
         if (onHeadersChange && localHeaders !== headers) {
             onHeadersChange(localHeaders);
         }
+
+        // Atualizar coluna NCM se for tipo produto
+        if (sheetType === 'produto') {
+            setNcmColumnHeader('Código NCM');
+        }
+
         setHasChanges(false);
         setIsOpen(false);
     };
@@ -216,6 +230,126 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
 
     const visibleRows = useMemo(() => localRows.slice(0, 100), [localRows]);
 
+    // Contar caracteres especiais na planilha inteira
+    const invalidCharsInfo = useMemo(() => {
+        let totalInvalid = 0;
+        const charTypes: Record<string, number> = {};
+        const columnsWithIssues: Set<string> = new Set();
+
+        for (let colIdx = 0; colIdx < localHeaders.length; colIdx++) {
+            const colName = localHeaders[colIdx];
+            let colHasIssues = false;
+
+            for (const row of localRows) {
+                const val = String(row[colIdx] ?? '');
+                const allowed = /[\w\s.,;:\-()@]/;
+                for (const c of val) {
+                    if (!allowed.test(c)) {
+                        totalInvalid++;
+                        colHasIssues = true;
+                        const categories = categorizeSpecialCharsInString(val);
+                        const cat = categories.find(x => x.char === c);
+                        const label = cat?.label ?? 'símbolo';
+                        charTypes[label] = (charTypes[label] ?? 0) + 1;
+                    }
+                }
+            }
+
+            if (colHasIssues) {
+                columnsWithIssues.add(colName);
+            }
+        }
+
+        return { totalInvalid, charTypes, columnsWithIssues: Array.from(columnsWithIssues) };
+    }, [localRows, localHeaders]);
+
+    // Remover caracteres especiais, acentos e vírgulas de toda a planilha
+    const handleRemoveSpecialChars = () => {
+        const newRows = localRows.map(row =>
+            row.map(cell => {
+                let val = String(cell ?? '');
+                // Aplicar limpeza especial
+                val = applySpecialCharsClean(val);
+                // Remover acentos
+                val = val.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                // Remover vírgula
+                val = val.replace(/,/g, '');
+                // Normalizar espaços múltiplos
+                val = val.replace(/\s{2,}/g, ' ').trim();
+                return val;
+            })
+        );
+        setLocalRows(newRows);
+        setHasChanges(true);
+        setIsCleanerOpen(false);
+    };
+
+    // Verificar NCM inválido (apenas para tipo produto e se coluna foi mapeada)
+    const ncmInfo = useMemo(() => {
+        if (sheetType !== 'produto' || !ncmColumnHeader) return { totalInvalid: 0, invalidLines: [] };
+
+        let totalInvalid = 0;
+        const invalidLines: Array<{ rowIdx: number; row: number; value: string; issue: string }> = [];
+
+        const ncmColIdx = localHeaders.indexOf(ncmColumnHeader);
+
+        if (ncmColIdx === -1) return { totalInvalid: 0, invalidLines: [] };
+
+        for (let rowIdx = 0; rowIdx < localRows.length; rowIdx++) {
+            const val = String(localRows[rowIdx][ncmColIdx] ?? '').trim();
+
+            if (val === '') continue;
+
+            const onlyDigits = val.replace(/\D/g, '');
+            let issue = '';
+
+            if (onlyDigits.length !== 8) {
+                issue = `deve ter 8 dígitos (tem ${onlyDigits.length})`;
+                totalInvalid++;
+                invalidLines.push({ rowIdx, row: rowIdx + 1, value: val, issue });
+            } else if (!/^\d{8}$/.test(onlyDigits)) {
+                issue = 'contém caracteres não numéricos';
+                totalInvalid++;
+                invalidLines.push({ rowIdx, row: rowIdx + 1, value: val, issue });
+            }
+        }
+
+        return { totalInvalid, invalidLines };
+    }, [localRows, localHeaders, sheetType, ncmColumnHeader]);
+
+    // Aplicar edições de NCM aos dados
+    const handleApplyNcmEdits = () => {
+        const ncmColIdx = localHeaders.indexOf(ncmColumnHeader || 'Código NCM');
+        if (ncmColIdx === -1) return;
+
+        const newRows = localRows.map((row, rowIdx) => {
+            if (ncmEdits[rowIdx]) {
+                const newRow = [...row];
+                newRow[ncmColIdx] = ncmEdits[rowIdx];
+                return newRow;
+            }
+            return row;
+        });
+
+        setLocalRows(newRows);
+        setNcmEdits({});
+        setIsNcmEditorOpen(false);
+        setHasChanges(true);
+    };
+
+    // Preencher NCMs com menos de 8 dígitos usando zeros à esquerda
+    const handleFillWithZero = () => {
+        const newEdits = { ...ncmEdits };
+        ncmInfo.invalidLines.forEach((item) => {
+            const val = String(item.value || '').trim();
+            const onlyDigits = val.replace(/\D/g, '');
+            if (onlyDigits.length < 8 && onlyDigits.length > 0) {
+                newEdits[item.rowIdx] = onlyDigits.padStart(8, '0');
+            }
+        });
+        setNcmEdits(newEdits);
+    };
+
     return (
         <>
             <div className="space-y-6">
@@ -235,7 +369,7 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
                             <p className="text-base font-semibold text-foreground capitalize">{sheetType || 'N/A'}</p>
                         </div>
                     </div>
-                    
+
                     {/* Botão Centralizado */}
                     <div className="flex justify-center">
                         <Button
@@ -250,223 +384,486 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
                     </div>
                 </Card>
 
-            <Dialog open={isOpen} onOpenChange={setIsOpen}>
-                <DialogContent className="max-w-[min(96rem,calc(100vw-1.5rem))] w-full h-[min(92vh,900px)] flex flex-col p-0 gap-0 overflow-hidden sm:rounded-lg">
-                    <DialogHeader className="px-6 pt-6 pb-3 border-b shrink-0 text-left space-y-1">
-                        <DialogTitle className="flex items-center gap-2 font-heading">
-                            <Edit2 className="w-5 h-5 text-primary" />
-                            Editor de Dados Personalizado
-                        </DialogTitle>
-                        <DialogDescription>
-                            {sheetType ? (
-                                <span>
-                                    Use os <span className="font-semibold text-foreground">selects nos headers</span> para trocar os nomes das colunas pelos campos do sistema.
-                                    Use a <span className="font-semibold text-foreground">lixeira (🗑)</span> para remover linhas.
-                                </span>
-                            ) : (
-                                <span>Clique em qualquer célula para editar. Use a <span className="font-semibold text-foreground">lixeira (🗑)</span> para remover linhas.</span>
-                            )}
-                            {localRows.length > 100 && (
-                                <span className="block mt-1 font-semibold text-amber-600 dark:text-amber-400">
-                                    ℹ Mostrando apenas as primeiras 100 linhas de {localRows.length} para melhor desempenho
-                                </span>
-                            )}
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="flex-1 overflow-hidden flex flex-col">
-                        <motion.div
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="flex-1 overflow-hidden flex flex-col"
-                        >
-                            <div className="flex-1 overflow-auto">
-                                <div className="border rounded-lg bg-card inline-block min-w-full">
-                                    <table className="border-collapse text-sm min-w-max">
-                                        <thead className="bg-slate-100 dark:bg-slate-800 border-b sticky top-0 z-20">
-                                            <tr className="font-semibold">
-                                                <th className="w-12 px-3 py-2 text-left text-xs font-semibold text-muted-foreground border-r bg-slate-100 dark:bg-slate-800">#</th>
-                                                {localHeaders.map((header, colIdx) => (
-                                                    <th
-                                                        key={`header-${colIdx}`}
-                                                        className="px-3 py-2 border-r min-w-[220px] bg-slate-100 dark:bg-slate-800"
-                                                    >
-                                                        <div className="flex flex-col items-start gap-2.5">
-                                                            <div className="flex items-center justify-between w-full">
-                                                                <div className="text-[10px] font-mono font-bold text-muted-foreground px-1.5 py-0.5 bg-secondary/40 rounded">
-                                                                    {toExcelCol(colIdx)}
-                                                                </div>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleDeleteColumn(colIdx)}
-                                                                    className="p-1.5 hover:bg-destructive/20 rounded transition-colors"
-                                                                    title="Deletar coluna inteira"
-                                                                >
-                                                                    <Trash2 className="w-4 h-4 text-destructive" />
-                                                                </button>
-                                                            </div>
-                                                            {/* Nome original da coluna da planilha */}
-                                                            <div className="w-full">
-                                                                <div className="text-[10px] text-muted-foreground/60 font-semibold uppercase tracking-wide">
-                                                                    ORIGINAL
-                                                                </div>
-                                                                <div className="text-sm font-semibold text-foreground break-words mt-0.5">
-                                                                    {originalHeaders[colIdx]}
-                                                                </div>
-                                                            </div>
-                                                            {/* Contador de células vazias */}
-                                                            {getEmptyCellsInColumn(colIdx) > 0 && (
-                                                                <div className="flex items-center gap-2 w-full">
-                                                                    <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-                                                                        {getEmptyCellsInColumn(colIdx)} vazi{getEmptyCellsInColumn(colIdx) === 1 ? 'a' : 'as'}
-                                                                    </span>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleDeleteEmptyRowsByColumn(colIdx)}
-                                                                        className="p-1 hover:bg-destructive/20 rounded transition-colors flex-shrink-0"
-                                                                        title={`Deletar linhas vazias nesta coluna`}
-                                                                    >
-                                                                        <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                                                                    </button>
-                                                                </div>
-                                                            )}
-                                                            {sheetType ? (
-                                                                <Select value={header} onValueChange={(value) => handleHeaderChange(colIdx, value)}>
-                                                                    <SelectTrigger className="h-8 text-xs w-full">
-                                                                        <SelectValue placeholder="Selecione um campo..." />
-                                                                    </SelectTrigger>
-                                                                    <SelectContent className="max-h-[300px]">
-                                                                        <SelectItem value="__manual__" className="text-amber-600 dark:text-amber-400 font-medium">
-                                                                            ✏️ Digitar manualmente...
-                                                                        </SelectItem>
-                                                                        {systemFields.map((field) => (
-                                                                            <SelectItem key={field} value={field}>
-                                                                                {field}
-                                                                            </SelectItem>
-                                                                        ))}
-                                                                    </SelectContent>
-                                                                </Select>
-                                                            ) : (
-                                                                <span className="text-xs font-semibold text-foreground">{header}</span>
-                                                            )}
-                                                        </div>
-                                                    </th>
-                                                ))}
-                                                <th className="w-12 px-3 py-2 text-center text-xs font-semibold text-muted-foreground bg-slate-100 dark:bg-slate-800">Ação</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {visibleRows.map((row, rowIdx) => (
-                                                <tr key={rowIdx} className="border-b hover:bg-muted/50 transition-colors">
-                                                    <td className="w-12 px-3 py-2 text-xs font-mono text-muted-foreground border-r bg-secondary/30">
-                                                        {rowIdx + 1}
-                                                    </td>
-                                                    {row.map((cell, colIdx) => (
-                                                        <td
-                                                            key={`${rowIdx}-${colIdx}`}
-                                                            className="px-3 py-2 border-r cursor-pointer hover:bg-primary/5 transition-colors"
-                                                            onClick={() => handleCellClick(rowIdx, colIdx)}
-                                                        >
-                                                            <div className="text-xs truncate max-w-xs break-words whitespace-normal">
-                                                                {editingCell?.row === rowIdx && editingCell?.col === colIdx ? (
-                                                                    <div className="flex gap-1">
-                                                                        <Input
-                                                                            autoFocus
-                                                                            value={cellValue}
-                                                                            onChange={(e) => setCellValue(e.target.value)}
-                                                                            onKeyDown={(e) => {
-                                                                                if (e.key === 'Enter') handleSaveCell();
-                                                                                if (e.key === 'Escape') setEditingCell(null);
-                                                                            }}
-                                                                            onBlur={handleSaveCell}
-                                                                            className="h-7 text-xs px-2"
-                                                                        />
-                                                                    </div>
-                                                                ) : (
-                                                                    <span className="text-foreground">{String(cell ?? '')}</span>
-                                                                )}
-                                                            </div>
-                                                        </td>
-                                                    ))}
-                                                    <td className="w-12 px-3 py-2 text-center">
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            className="h-6 w-6 p-0"
-                                                            onClick={() => handleDeleteRow(rowIdx)}
-                                                        >
-                                                            <Trash2 className="w-3 h-3 text-destructive" />
-                                                        </Button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                {/* Card de Limpeza de Caracteres */}
+                <Card className="p-6 border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30">
+                    <div className="text-center mb-4">
+                        <div className="mb-3">
+                            <Sparkles className="w-8 h-8 text-amber-500 mx-auto mb-2" />
+                            <p className="text-sm text-muted-foreground">Caracteres inválidos encontrados</p>
+                            <p className="text-3xl font-bold text-amber-600 dark:text-amber-400">
+                                {invalidCharsInfo.totalInvalid}
+                            </p>
+                        </div>
+                        {Object.entries(invalidCharsInfo.charTypes).length > 0 && (
+                            <div className="flex flex-wrap gap-2 justify-center mb-4">
+                                {Object.entries(invalidCharsInfo.charTypes).map(([type, count]) => (
+                                    <Badge key={type} variant="outline" className="text-xs">
+                                        {type}: {count}
+                                    </Badge>
+                                ))}
+                            </div>
+                        )}
+                        {invalidCharsInfo.columnsWithIssues.length > 0 && (
+                            <div className="mb-4 text-left p-3 rounded bg-amber-100/50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                                <p className="text-xs font-semibold text-amber-900 dark:text-amber-200 mb-2">Colunas afetadas:</p>
+                                <div className="flex flex-wrap gap-1">
+                                    {invalidCharsInfo.columnsWithIssues.map((col) => (
+                                        <Badge key={col} className="text-[10px] bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                                            {col}
+                                        </Badge>
+                                    ))}
                                 </div>
                             </div>
+                        )}
+                    </div>
 
-                            {localRows.length === 0 && (
-                                <div className="py-12 text-center text-muted-foreground">
-                                    Nenhuma linha de dados. Clique em &quot;Adicionar Linha&quot; para começar.
+                    <div className="flex justify-center">
+                        <Button
+                            variant="default"
+                            size="lg"
+                            onClick={() => setIsCleanerOpen(true)}
+                            className="gap-2 bg-amber-600 hover:bg-amber-700"
+                            disabled={invalidCharsInfo.totalInvalid === 0}
+                        >
+                            <Sparkles className="w-4 h-4" />
+                            Limpar Caracteres Especiais
+                        </Button>
+                    </div>
+                </Card>
+
+                {/* Card de Validação de NCM (apenas para tipo produto após salvar coluna NCM) */}
+                {sheetType === 'produto' && ncmColumnHeader && (
+                    <Card className="p-6 border border-orange-200 dark:border-orange-900 bg-orange-50 dark:bg-orange-950/30">
+                        <div className="text-center mb-4">
+                            <div className="mb-3">
+                                <ScanLine className="w-8 h-8 text-orange-500 mx-auto mb-2" />
+                                <p className="text-sm text-muted-foreground">NCM com numeração inválida</p>
+                                <p className="text-3xl font-bold text-orange-600 dark:text-orange-400">
+                                    {ncmInfo.totalInvalid}
+                                </p>
+                            </div>
+                            {ncmInfo.invalidLines.length > 0 && (
+                                <div className="text-left p-3 rounded bg-orange-100/50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 max-h-40 overflow-y-auto">
+                                    <p className="text-xs font-semibold text-orange-900 dark:text-orange-200 mb-2">Linhas inválidas encontradas:</p>
+                                    <div className="space-y-1">
+                                        {ncmInfo.invalidLines.slice(0, 5).map((item, idx) => (
+                                            <div key={idx} className="text-xs text-orange-800 dark:text-orange-300">
+                                                Linha {item.row}: <span className="font-mono">"{item.value}"</span> - {item.issue}
+                                            </div>
+                                        ))}
+                                        {ncmInfo.invalidLines.length > 5 && (
+                                            <div className="text-xs text-orange-700 dark:text-orange-400 font-semibold">
+                                                +{ncmInfo.invalidLines.length - 5} linha(s) mais...
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             )}
-                        </motion.div>
-                    </div>
+                        </div>
+                        {ncmInfo.totalInvalid > 0 && (
+                            <div className="flex justify-center gap-2">
+                                <Button
+                                    variant="default"
+                                    size="lg"
+                                    onClick={() => setIsNcmEditorOpen(true)}
+                                    className="gap-2 bg-orange-600 hover:bg-orange-700"
+                                >
+                                    <Edit2 className="w-4 h-4" />
+                                    Editar NCMs
+                                </Button>
+                            </div>
+                        )}
+                    </Card>
+                )}
 
-                    <div className="px-6 py-4 border-t shrink-0 flex justify-between items-center gap-2 bg-card/80 flex-wrap">
-                        <div className="flex items-center gap-2">
-                            <Badge variant="secondary">
-                                {localRows.length} linha(s)
-                            </Badge>
-                            {hasChanges && (
-                                <Badge variant="destructive" className="animate-pulse">
-                                    Alterações não salvas
+                <Dialog open={isOpen} onOpenChange={setIsOpen}>
+                    <DialogContent className="max-w-[min(96rem,calc(100vw-1.5rem))] w-full h-[min(92vh,900px)] flex flex-col p-0 gap-0 overflow-hidden sm:rounded-lg">
+                        <DialogHeader className="px-6 pt-6 pb-3 border-b shrink-0 text-left space-y-1">
+                            <DialogTitle className="flex items-center gap-2 font-heading">
+                                <Edit2 className="w-5 h-5 text-primary" />
+                                Editor de Dados Personalizado
+                            </DialogTitle>
+                            <DialogDescription>
+                                {sheetType ? (
+                                    <span>
+                                        Use os <span className="font-semibold text-foreground">selects nos headers</span> para trocar os nomes das colunas pelos campos do sistema.
+                                        Use a <span className="font-semibold text-foreground">lixeira (🗑)</span> para remover linhas.
+                                    </span>
+                                ) : (
+                                    <span>Clique em qualquer célula para editar. Use a <span className="font-semibold text-foreground">lixeira (🗑)</span> para remover linhas.</span>
+                                )}
+                                {localRows.length > 100 && (
+                                    <span className="block mt-1 font-semibold text-amber-600 dark:text-amber-400">
+                                        ℹ Mostrando apenas as primeiras 100 linhas de {localRows.length} para melhor desempenho
+                                    </span>
+                                )}
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="flex-1 overflow-hidden flex flex-col">
+                            <motion.div
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="flex-1 overflow-hidden flex flex-col"
+                            >
+                                <div className="flex-1 overflow-auto">
+                                    <div className="border rounded-lg bg-card inline-block min-w-full">
+                                        <table className="border-collapse text-sm min-w-max">
+                                            <thead className="bg-slate-100 dark:bg-slate-800 border-b sticky top-0 z-20">
+                                                <tr className="font-semibold">
+                                                    <th className="w-12 px-3 py-2 text-left text-xs font-semibold text-muted-foreground border-r bg-slate-100 dark:bg-slate-800">#</th>
+                                                    {localHeaders.map((header, colIdx) => (
+                                                        <th
+                                                            key={`header-${colIdx}`}
+                                                            className="px-3 py-2 border-r min-w-[220px] bg-slate-100 dark:bg-slate-800"
+                                                        >
+                                                            <div className="flex flex-col items-start gap-2.5">
+                                                                <div className="flex items-center justify-between w-full">
+                                                                    <div className="text-[10px] font-mono font-bold text-muted-foreground px-1.5 py-0.5 bg-secondary/40 rounded">
+                                                                        {toExcelCol(colIdx)}
+                                                                    </div>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleDeleteColumn(colIdx)}
+                                                                        className="p-1.5 hover:bg-destructive/20 rounded transition-colors"
+                                                                        title="Deletar coluna inteira"
+                                                                    >
+                                                                        <Trash2 className="w-4 h-4 text-destructive" />
+                                                                    </button>
+                                                                </div>
+                                                                {/* Nome original da coluna da planilha */}
+                                                                <div className="w-full">
+                                                                    <div className="text-[10px] text-muted-foreground/60 font-semibold uppercase tracking-wide">
+                                                                        ORIGINAL
+                                                                    </div>
+                                                                    <div className="text-sm font-semibold text-foreground break-words mt-0.5">
+                                                                        {originalHeaders[colIdx]}
+                                                                    </div>
+                                                                </div>
+                                                                {/* Contador de células vazias */}
+                                                                {getEmptyCellsInColumn(colIdx) > 0 && (
+                                                                    <div className="flex items-center gap-2 w-full">
+                                                                        <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                                                                            {getEmptyCellsInColumn(colIdx)} vazi{getEmptyCellsInColumn(colIdx) === 1 ? 'a' : 'as'}
+                                                                        </span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleDeleteEmptyRowsByColumn(colIdx)}
+                                                                            className="p-1 hover:bg-destructive/20 rounded transition-colors flex-shrink-0"
+                                                                            title={`Deletar linhas vazias nesta coluna`}
+                                                                        >
+                                                                            <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                                {sheetType ? (
+                                                                    <Select value={header} onValueChange={(value) => handleHeaderChange(colIdx, value)}>
+                                                                        <SelectTrigger className="h-8 text-xs w-full">
+                                                                            <SelectValue placeholder="Selecione um campo..." />
+                                                                        </SelectTrigger>
+                                                                        <SelectContent className="max-h-[300px]">
+                                                                            <SelectItem value="__manual__" className="text-amber-600 dark:text-amber-400 font-medium">
+                                                                                ✏️ Digitar manualmente...
+                                                                            </SelectItem>
+                                                                            {systemFields.map((field) => (
+                                                                                <SelectItem key={field} value={field}>
+                                                                                    {field}
+                                                                                </SelectItem>
+                                                                            ))}
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                ) : (
+                                                                    <span className="text-xs font-semibold text-foreground">{header}</span>
+                                                                )}
+                                                            </div>
+                                                        </th>
+                                                    ))}
+                                                    <th className="w-12 px-3 py-2 text-center text-xs font-semibold text-muted-foreground bg-slate-100 dark:bg-slate-800">Ação</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {visibleRows.map((row, rowIdx) => (
+                                                    <tr key={rowIdx} className="border-b hover:bg-muted/50 transition-colors">
+                                                        <td className="w-12 px-3 py-2 text-xs font-mono text-muted-foreground border-r bg-secondary/30">
+                                                            {rowIdx + 1}
+                                                        </td>
+                                                        {row.map((cell, colIdx) => (
+                                                            <td
+                                                                key={`${rowIdx}-${colIdx}`}
+                                                                className="px-3 py-2 border-r cursor-pointer hover:bg-primary/5 transition-colors"
+                                                                onClick={() => handleCellClick(rowIdx, colIdx)}
+                                                            >
+                                                                <div className="text-xs truncate max-w-xs break-words whitespace-normal">
+                                                                    {editingCell?.row === rowIdx && editingCell?.col === colIdx ? (
+                                                                        <div className="flex gap-1">
+                                                                            <Input
+                                                                                autoFocus
+                                                                                value={cellValue}
+                                                                                onChange={(e) => setCellValue(e.target.value)}
+                                                                                onKeyDown={(e) => {
+                                                                                    if (e.key === 'Enter') handleSaveCell();
+                                                                                    if (e.key === 'Escape') setEditingCell(null);
+                                                                                }}
+                                                                                onBlur={handleSaveCell}
+                                                                                className="h-7 text-xs px-2"
+                                                                            />
+                                                                        </div>
+                                                                    ) : (
+                                                                        <span className="text-foreground">{String(cell ?? '')}</span>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                        ))}
+                                                        <td className="w-12 px-3 py-2 text-center">
+                                                            <Button
+                                                                type="button"
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                className="h-6 w-6 p-0"
+                                                                onClick={() => handleDeleteRow(rowIdx)}
+                                                            >
+                                                                <Trash2 className="w-3 h-3 text-destructive" />
+                                                            </Button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {localRows.length === 0 && (
+                                    <div className="py-12 text-center text-muted-foreground">
+                                        Nenhuma linha de dados. Clique em &quot;Adicionar Linha&quot; para começar.
+                                    </div>
+                                )}
+                            </motion.div>
+                        </div>
+
+                        <div className="px-6 py-4 border-t shrink-0 flex justify-between items-center gap-2 bg-card/80 flex-wrap">
+                            <div className="flex items-center gap-2">
+                                <Badge variant="secondary">
+                                    {localRows.length} linha(s)
                                 </Badge>
+                                {hasChanges && (
+                                    <Badge variant="destructive" className="animate-pulse">
+                                        Alterações não salvas
+                                    </Badge>
+                                )}
+                            </div>
+                            <div className="flex gap-2 flex-wrap">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleAddRow}
+                                    className="gap-2"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    Adicionar Linha
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleReset}
+                                    disabled={!hasChanges}
+                                    className="gap-2"
+                                >
+                                    <RotateCcw className="w-4 h-4" />
+                                    Descartar
+                                </Button>
+                                <Button
+                                    type="button"
+                                    onClick={handleApply}
+                                    disabled={!hasChanges}
+                                    className="gap-2"
+                                >
+                                    Salvar Alterações
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setIsOpen(false)}
+                                >
+                                    Fechar
+                                </Button>
+                            </div>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+
+                {/* Dialog de Limpeza de Caracteres Especiais */}
+                <Dialog open={isCleanerOpen} onOpenChange={setIsCleanerOpen}>
+                    <DialogContent className="max-w-md">
+                        <DialogHeader className="text-left">
+                            <DialogTitle className="text-lg flex items-center gap-2">
+                                <Sparkles className="w-5 h-5 text-amber-500" />
+                                Limpar Caracteres Especiais
+                            </DialogTitle>
+                            <DialogDescription>
+                                Remove caracteres inválidos que o sistema não aceita.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-4">
+                            <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800">
+                                <p className="text-sm font-medium text-amber-900 dark:text-amber-100 mb-2">
+                                    ⚠️ Esta ação vai:
+                                </p>
+                                <ul className="text-xs text-amber-800 dark:text-amber-200 space-y-1">
+                                    <li>✓ Remover caracteres especiais (@ # $ % & etc)</li>
+                                    <li>✓ Remover acentuação (é → e)</li>
+                                    <li>✓ Remover vírgulas</li>
+                                    <li>✓ Substituir C/ → COM e S/ → SEM</li>
+                                    <li>✓ Normalizar espaços</li>
+                                </ul>
+                            </div>
+
+                            {invalidCharsInfo.columnsWithIssues.length > 0 && (
+                                <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
+                                    <p className="text-xs font-semibold text-blue-900 dark:text-blue-200 mb-2">
+                                        📍 Colunas afetadas:
+                                    </p>
+                                    <div className="flex flex-wrap gap-1">
+                                        {invalidCharsInfo.columnsWithIssues.map((col) => (
+                                            <Badge key={col} className="text-[10px] bg-blue-500/20 text-blue-700 dark:text-blue-300">
+                                                {col}
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                </div>
                             )}
+
+                            <div className="grid grid-cols-2 gap-2">
+                                {Object.entries(invalidCharsInfo.charTypes).map(([type, count]) => (
+                                    <div key={type} className="p-2 rounded bg-secondary/50 text-center">
+                                        <p className="text-xs text-muted-foreground">{type}</p>
+                                        <p className="text-lg font-bold text-foreground">{count}</p>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setIsCleanerOpen(false)}
+                                    className="flex-1"
+                                >
+                                    Cancelar
+                                </Button>
+                                <Button
+                                    variant="default"
+                                    onClick={handleRemoveSpecialChars}
+                                    className="flex-1 bg-amber-600 hover:bg-amber-700"
+                                >
+                                    <Sparkles className="w-4 h-4 mr-1" />
+                                    Limpar Tudo
+                                </Button>
+                            </div>
                         </div>
-                        <div className="flex gap-2 flex-wrap">
+                    </DialogContent>
+                </Dialog>
+
+                {/* Dialog de Edição de NCM */}
+                <Dialog open={isNcmEditorOpen} onOpenChange={setIsNcmEditorOpen}>
+                    <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+                        <DialogHeader className="text-left">
+                            <DialogTitle className="text-lg flex items-center gap-2">
+                                <Edit2 className="w-5 h-5 text-blue-500" />
+                                Editar NCMs Inválidos
+                            </DialogTitle>
+                            <DialogDescription>
+                                Edite os NCM que não possuem exatamente 8 dígitos.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="flex-1 overflow-y-auto">
+                            <div className="border rounded-lg">
+                                <table className="w-full">
+                                    <thead className="bg-muted sticky top-0">
+                                        <tr>
+                                            <th className="text-left text-xs font-semibold px-3 py-2 w-16">Linha</th>
+                                            <th className="text-left text-xs font-semibold px-3 py-2">Valor Atual</th>
+                                            <th className="text-left text-xs font-semibold px-3 py-2">Novo Valor</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {ncmInfo.invalidLines.map((item, idx) => (
+                                            <tr
+                                                key={item.rowIdx}
+                                                className={`border-t ${idx % 2 === 0 ? 'bg-background' : 'bg-muted/30'}`}
+                                            >
+                                                <td className="px-3 py-2">
+                                                    <Badge className="bg-blue-600 text-white text-xs">
+                                                        {item.row}
+                                                    </Badge>
+                                                </td>
+                                                <td className="px-3 py-2 text-sm text-muted-foreground font-mono">
+                                                    {item.value || '-'}
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <Input
+                                                        placeholder="12345678"
+                                                        value={ncmEdits[item.rowIdx] || ''}
+                                                        onChange={(e) => {
+                                                            const value = e.target.value.replace(/\D/g, '').slice(0, 8);
+                                                            if (value === '') {
+                                                                const newEdits = { ...ncmEdits };
+                                                                delete newEdits[item.rowIdx];
+                                                                setNcmEdits(newEdits);
+                                                            } else {
+                                                                setNcmEdits((prev) => ({
+                                                                    ...prev,
+                                                                    [item.rowIdx]: value,
+                                                                }));
+                                                            }
+                                                        }}
+                                                        className="h-8 text-sm font-mono"
+                                                        maxLength={8}
+                                                    />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-2 mt-4 pt-4 border-t">
                             <Button
-                                type="button"
                                 variant="outline"
-                                size="sm"
-                                onClick={handleAddRow}
-                                className="gap-2"
+                                onClick={() => {
+                                    setNcmEdits({});
+                                    setIsNcmEditorOpen(false);
+                                }}
                             >
-                                <Plus className="w-4 h-4" />
-                                Adicionar Linha
+                                Cancelar
                             </Button>
                             <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={handleReset}
-                                disabled={!hasChanges}
-                                className="gap-2"
+                                variant="secondary"
+                                onClick={handleFillWithZero}
+                                disabled={!ncmInfo.invalidLines.some(item => {
+                                    const onlyDigits = String(item.value || '').replace(/\D/g, '');
+                                    return onlyDigits.length < 8 && onlyDigits.length > 0;
+                                })}
                             >
-                                <RotateCcw className="w-4 h-4" />
-                                Descartar
+                                Preencher com 0
                             </Button>
+                            <div className="flex-1" />
                             <Button
-                                type="button"
-                                onClick={handleApply}
-                                disabled={!hasChanges}
-                                className="gap-2"
+                                variant="default"
+                                onClick={handleApplyNcmEdits}
+                                disabled={Object.keys(ncmEdits).length === 0}
+                                className="bg-blue-600 hover:bg-blue-700"
                             >
-                                Salvar Alterações
-                            </Button>
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setIsOpen(false)}
-                            >
-                                Fechar
+                                <Check className="w-4 h-4 mr-1" />
+                                Aplicar
                             </Button>
                         </div>
-                    </div>
-                </DialogContent>
-            </Dialog>
+                    </DialogContent>
+                </Dialog>
             </div>
         </>
     );
