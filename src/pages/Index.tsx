@@ -33,8 +33,8 @@ export default function Index() {
   const [sheetType, setSheetType] = useState<SheetType | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [cleaningOptions, setCleaningOptions] = useState<CleaningOptions>({
-    removeEmptyDescription: true,
-    removeEmptyRequired: true,
+    removeEmptyDescription: false,
+    removeEmptyRequired: false,
     removeSpecialChars: true,
     normalizeText: false,
     ignoreUnmapped: true,
@@ -168,6 +168,7 @@ export default function Index() {
                     sourceColumns={headers}
                     mapping={mapping}
                     onMappingChange={setMapping}
+                    sourceData={rows}
                   />
                 </div>
               )}
