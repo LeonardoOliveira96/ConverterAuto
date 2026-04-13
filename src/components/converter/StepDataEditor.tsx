@@ -252,134 +252,136 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
                         </DialogDescription>
                     </DialogHeader>
 
-                    <ScrollArea className="flex-1 overflow-hidden">
+                    <div className="flex-1 overflow-hidden flex flex-col">
                         <motion.div
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="p-6 space-y-4"
+                            className="flex-1 overflow-hidden flex flex-col"
                         >
-                            <div className="border rounded-lg overflow-auto bg-card">
-                                <table className="w-full border-collapse text-sm">
-                                    <thead>
-                                        <tr className="bg-primary/10 border-b sticky top-0 font-semibold">
-                                            <th className="w-12 px-3 py-2 text-left text-xs font-semibold text-muted-foreground border-r">#</th>
-                                            {localHeaders.map((header, colIdx) => (
-                                                <th
-                                                    key={`header-${colIdx}`}
-                                                    className="px-3 py-2 border-r min-w-[220px]"
-                                                >
-                                                    <div className="flex flex-col items-start gap-2.5">
-                                                        <div className="flex items-center justify-between w-full">
-                                                            <div className="text-[10px] font-mono font-bold text-muted-foreground px-1.5 py-0.5 bg-secondary/40 rounded">
-                                                                {toExcelCol(colIdx)}
-                                                            </div>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleDeleteColumn(colIdx)}
-                                                                className="p-1.5 hover:bg-destructive/20 rounded transition-colors"
-                                                                title="Deletar coluna inteira"
-                                                            >
-                                                                <Trash2 className="w-4 h-4 text-destructive" />
-                                                            </button>
-                                                        </div>
-                                                        {/* Nome original da coluna da planilha */}
-                                                        <div className="w-full">
-                                                            <div className="text-[10px] text-muted-foreground/60 font-semibold uppercase tracking-wide">
-                                                                ORIGINAL
-                                                            </div>
-                                                            <div className="text-sm font-semibold text-foreground break-words mt-0.5">
-                                                                {originalHeaders[colIdx]}
-                                                            </div>
-                                                        </div>
-                                                        {/* Contador de células vazias */}
-                                                        {getEmptyCellsInColumn(colIdx) > 0 && (
-                                                            <div className="flex items-center gap-2 w-full">
-                                                                <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-                                                                    {getEmptyCellsInColumn(colIdx)} vazi{getEmptyCellsInColumn(colIdx) === 1 ? 'a' : 'as'}
-                                                                </span>
+                            <div className="flex-1 overflow-auto">
+                                <div className="border rounded-lg bg-card inline-block min-w-full">
+                                    <table className="border-collapse text-sm min-w-max">
+                                        <thead className="bg-slate-100 dark:bg-slate-800 border-b sticky top-0 z-20">
+                                            <tr className="font-semibold">
+                                                <th className="w-12 px-3 py-2 text-left text-xs font-semibold text-muted-foreground border-r bg-slate-100 dark:bg-slate-800">#</th>
+                                                {localHeaders.map((header, colIdx) => (
+                                                    <th
+                                                        key={`header-${colIdx}`}
+                                                        className="px-3 py-2 border-r min-w-[220px] bg-slate-100 dark:bg-slate-800"
+                                                    >
+                                                        <div className="flex flex-col items-start gap-2.5">
+                                                            <div className="flex items-center justify-between w-full">
+                                                                <div className="text-[10px] font-mono font-bold text-muted-foreground px-1.5 py-0.5 bg-secondary/40 rounded">
+                                                                    {toExcelCol(colIdx)}
+                                                                </div>
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => handleDeleteEmptyRowsByColumn(colIdx)}
-                                                                    className="p-1 hover:bg-destructive/20 rounded transition-colors flex-shrink-0"
-                                                                    title={`Deletar linhas vazias nesta coluna`}
+                                                                    onClick={() => handleDeleteColumn(colIdx)}
+                                                                    className="p-1.5 hover:bg-destructive/20 rounded transition-colors"
+                                                                    title="Deletar coluna inteira"
                                                                 >
-                                                                    <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                                                                    <Trash2 className="w-4 h-4 text-destructive" />
                                                                 </button>
                                                             </div>
-                                                        )}
-                                                        {sheetType ? (
-                                                            <Select value={header} onValueChange={(value) => handleHeaderChange(colIdx, value)}>
-                                                                <SelectTrigger className="h-8 text-xs w-full">
-                                                                    <SelectValue placeholder="Selecione um campo..." />
-                                                                </SelectTrigger>
-                                                                <SelectContent className="max-h-[300px]">
-                                                                    <SelectItem value="__manual__" className="text-amber-600 dark:text-amber-400 font-medium">
-                                                                        ✏️ Digitar manualmente...
-                                                                    </SelectItem>
-                                                                    {systemFields.map((field) => (
-                                                                        <SelectItem key={field} value={field}>
-                                                                            {field}
-                                                                        </SelectItem>
-                                                                    ))}
-                                                                </SelectContent>
-                                                            </Select>
-                                                        ) : (
-                                                            <span className="text-xs font-semibold text-foreground">{header}</span>
-                                                        )}
-                                                    </div>
-                                                </th>
-                                            ))}
-                                            <th className="w-12 px-3 py-2 text-center text-xs font-semibold text-muted-foreground">Ação</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {visibleRows.map((row, rowIdx) => (
-                                            <tr key={rowIdx} className="border-b hover:bg-muted/50 transition-colors">
-                                                <td className="w-12 px-3 py-2 text-xs font-mono text-muted-foreground border-r bg-secondary/30">
-                                                    {rowIdx + 1}
-                                                </td>
-                                                {row.map((cell, colIdx) => (
-                                                    <td
-                                                        key={`${rowIdx}-${colIdx}`}
-                                                        className="px-3 py-2 border-r cursor-pointer hover:bg-primary/5 transition-colors"
-                                                        onClick={() => handleCellClick(rowIdx, colIdx)}
-                                                    >
-                                                        <div className="text-xs truncate max-w-xs break-words whitespace-normal">
-                                                            {editingCell?.row === rowIdx && editingCell?.col === colIdx ? (
-                                                                <div className="flex gap-1">
-                                                                    <Input
-                                                                        autoFocus
-                                                                        value={cellValue}
-                                                                        onChange={(e) => setCellValue(e.target.value)}
-                                                                        onKeyDown={(e) => {
-                                                                            if (e.key === 'Enter') handleSaveCell();
-                                                                            if (e.key === 'Escape') setEditingCell(null);
-                                                                        }}
-                                                                        onBlur={handleSaveCell}
-                                                                        className="h-7 text-xs px-2"
-                                                                    />
+                                                            {/* Nome original da coluna da planilha */}
+                                                            <div className="w-full">
+                                                                <div className="text-[10px] text-muted-foreground/60 font-semibold uppercase tracking-wide">
+                                                                    ORIGINAL
                                                                 </div>
+                                                                <div className="text-sm font-semibold text-foreground break-words mt-0.5">
+                                                                    {originalHeaders[colIdx]}
+                                                                </div>
+                                                            </div>
+                                                            {/* Contador de células vazias */}
+                                                            {getEmptyCellsInColumn(colIdx) > 0 && (
+                                                                <div className="flex items-center gap-2 w-full">
+                                                                    <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                                                                        {getEmptyCellsInColumn(colIdx)} vazi{getEmptyCellsInColumn(colIdx) === 1 ? 'a' : 'as'}
+                                                                    </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleDeleteEmptyRowsByColumn(colIdx)}
+                                                                        className="p-1 hover:bg-destructive/20 rounded transition-colors flex-shrink-0"
+                                                                        title={`Deletar linhas vazias nesta coluna`}
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                            {sheetType ? (
+                                                                <Select value={header} onValueChange={(value) => handleHeaderChange(colIdx, value)}>
+                                                                    <SelectTrigger className="h-8 text-xs w-full">
+                                                                        <SelectValue placeholder="Selecione um campo..." />
+                                                                    </SelectTrigger>
+                                                                    <SelectContent className="max-h-[300px]">
+                                                                        <SelectItem value="__manual__" className="text-amber-600 dark:text-amber-400 font-medium">
+                                                                            ✏️ Digitar manualmente...
+                                                                        </SelectItem>
+                                                                        {systemFields.map((field) => (
+                                                                            <SelectItem key={field} value={field}>
+                                                                                {field}
+                                                                            </SelectItem>
+                                                                        ))}
+                                                                    </SelectContent>
+                                                                </Select>
                                                             ) : (
-                                                                <span className="text-foreground">{String(cell ?? '')}</span>
+                                                                <span className="text-xs font-semibold text-foreground">{header}</span>
                                                             )}
                                                         </div>
-                                                    </td>
+                                                    </th>
                                                 ))}
-                                                <td className="w-12 px-3 py-2 text-center">
-                                                    <Button
-                                                        type="button"
-                                                        size="sm"
-                                                        variant="ghost"
-                                                        className="h-6 w-6 p-0"
-                                                        onClick={() => handleDeleteRow(rowIdx)}
-                                                    >
-                                                        <Trash2 className="w-3 h-3 text-destructive" />
-                                                    </Button>
-                                                </td>
+                                                <th className="w-12 px-3 py-2 text-center text-xs font-semibold text-muted-foreground bg-slate-100 dark:bg-slate-800">Ação</th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                        </thead>
+                                        <tbody>
+                                            {visibleRows.map((row, rowIdx) => (
+                                                <tr key={rowIdx} className="border-b hover:bg-muted/50 transition-colors">
+                                                    <td className="w-12 px-3 py-2 text-xs font-mono text-muted-foreground border-r bg-secondary/30">
+                                                        {rowIdx + 1}
+                                                    </td>
+                                                    {row.map((cell, colIdx) => (
+                                                        <td
+                                                            key={`${rowIdx}-${colIdx}`}
+                                                            className="px-3 py-2 border-r cursor-pointer hover:bg-primary/5 transition-colors"
+                                                            onClick={() => handleCellClick(rowIdx, colIdx)}
+                                                        >
+                                                            <div className="text-xs truncate max-w-xs break-words whitespace-normal">
+                                                                {editingCell?.row === rowIdx && editingCell?.col === colIdx ? (
+                                                                    <div className="flex gap-1">
+                                                                        <Input
+                                                                            autoFocus
+                                                                            value={cellValue}
+                                                                            onChange={(e) => setCellValue(e.target.value)}
+                                                                            onKeyDown={(e) => {
+                                                                                if (e.key === 'Enter') handleSaveCell();
+                                                                                if (e.key === 'Escape') setEditingCell(null);
+                                                                            }}
+                                                                            onBlur={handleSaveCell}
+                                                                            className="h-7 text-xs px-2"
+                                                                        />
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="text-foreground">{String(cell ?? '')}</span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                    ))}
+                                                    <td className="w-12 px-3 py-2 text-center">
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            className="h-6 w-6 p-0"
+                                                            onClick={() => handleDeleteRow(rowIdx)}
+                                                        >
+                                                            <Trash2 className="w-3 h-3 text-destructive" />
+                                                        </Button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
 
                             {localRows.length === 0 && (
@@ -388,7 +390,7 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
                                 </div>
                             )}
                         </motion.div>
-                    </ScrollArea>
+                    </div>
 
                     <div className="px-6 py-4 border-t shrink-0 flex justify-between items-center gap-2 bg-card/80 flex-wrap">
                         <div className="flex items-center gap-2">
