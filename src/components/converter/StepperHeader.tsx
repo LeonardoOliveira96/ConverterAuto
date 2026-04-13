@@ -5,7 +5,6 @@ const STEPS = [
   { label: 'Upload', icon: '📥' },
   { label: 'Tipo', icon: '📂' },
   { label: 'Mapeamento', icon: '🔗' },
-  { label: 'Validação', icon: '⚙️' },
   { label: 'Processamento', icon: '⚡' },
   { label: 'Resultado', icon: '📤' },
 ];
@@ -30,8 +29,8 @@ export function StepperHeader({ currentStep }: StepperHeaderProps) {
                   backgroundColor: isDone
                     ? 'hsl(var(--stepper-done))'
                     : isActive
-                    ? 'hsl(var(--stepper-active))'
-                    : 'hsl(var(--stepper-pending))',
+                      ? 'hsl(var(--stepper-active))'
+                      : 'hsl(var(--stepper-pending))',
                 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                 className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold text-primary-foreground shadow-md"
