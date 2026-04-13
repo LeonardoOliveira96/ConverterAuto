@@ -21,9 +21,45 @@ export function StepUpload({ onFileLoaded, fileInfo }: StepUploadProps) {
       const workbook = XLSX.read(data, { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json<SpreadsheetRow>(sheet, { header: 1 });
-      const headers = (json[0] || []).map(String);
-      const rows = json.slice(1);
-      onFileLoaded({ fileName: file.name, headers, rows, rawData: json });
+
+      // Remover apenas trailing empty cells (sem modificar colunas)
+      let cleanedJson = json.map((row) => {
+        if (!Array.isArray(row)) return row;
+        while (row.length > 0 && (row[row.length - 1] === undefined || row[row.length - 1] === null || row[row.length - 1] === '')) {
+          row.pop();
+        }
+        return row;
+      });
+
+      // IMPORTANTE: Normalizar arrays para preencher "holes" (colunas vazias no meio)
+      // O SheetJS deixa holes em vez de strings vazias quando há colunas vazias no meio
+      const maxCols = Math.max(...cleanedJson.map((r) => (Array.isArray(r) ? r.length : 0)), 0);
+      cleanedJson = cleanedJson.map((row) => {
+        if (!Array.isArray(row)) return row;
+        const normalized: SpreadsheetRow = new Array(maxCols);
+        for (let i = 0; i < maxCols; i++) {
+          normalized[i] = (i < row.length && row[i] !== undefined && row[i] !== null) ? row[i] : '';
+        }
+        return normalized;
+      });
+
+      const headers = (cleanedJson[0] || []).map(String);
+      const rows = cleanedJson.slice(1);
+
+      // Debug: Log dados brutos
+      console.log('[FILE LOAD - RAW DATA]', {
+        fileName: file.name,
+        headerCount: headers.length,
+        headers: headers.map((h, i) => `[${i}] ${h}`),
+        maxColumnsFound: maxCols,
+        firstFiveRows: rows.slice(0, 5).map((r, i) => ({
+          row: i + 2,
+          colCount: (r as SpreadsheetRow).length,
+          data: (r as SpreadsheetRow).map((cell, colIdx) => `[${colIdx}] ${cell === '' ? '(vazio)' : cell}`)
+        }))
+      });
+
+      onFileLoaded({ fileName: file.name, headers, rows, rawData: cleanedJson });
     };
     reader.readAsArrayBuffer(file);
   }, [onFileLoaded]);
