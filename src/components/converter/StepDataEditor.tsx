@@ -122,8 +122,15 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
     };
 
     const handleDeleteRow = (rowIdx: number) => {
+        // Salvar qualquer célula em edição antes de deletar
+        if (editingCell) {
+            handleCellChange(cellValue);
+        }
+
         const newRows = localRows.filter((_, idx) => idx !== rowIdx);
         setLocalRows(newRows);
+        setEditingCell(null);
+        setCellValue('');
         setHasChanges(true);
     };
 
@@ -174,6 +181,11 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
     };
 
     const handleDeleteColumn = (colIdx: number) => {
+        // Salvar qualquer célula em edição antes de deletar
+        if (editingCell) {
+            handleCellChange(cellValue);
+        }
+
         if (window.confirm(`Tem certeza que deseja deletar a coluna "${originalHeaders[colIdx]}"? Esta ação não pode ser desfeita.`)) {
             // Remover do header
             const newHeaders = localHeaders.filter((_, idx) => idx !== colIdx);
@@ -189,6 +201,8 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
             const newOriginalHeaders = originalHeaders.filter((_, idx) => idx !== colIdx);
             setOriginalHeaders(newOriginalHeaders);
 
+            setEditingCell(null);
+            setCellValue('');
             setHasChanges(true);
         }
     };
@@ -202,6 +216,11 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
     };
 
     const handleDeleteEmptyRows = () => {
+        // Salvar qualquer célula em edição antes de deletar
+        if (editingCell) {
+            handleCellChange(cellValue);
+        }
+
         const emptyCount = countEmptyRows;
         if (emptyCount === 0) {
             alert('Não há linhas vazias para deletar.');
@@ -210,11 +229,18 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
         if (window.confirm(`Tem certeza que deseja deletar ${emptyCount} linha(s) vazia(s)? Esta ação não pode ser desfeita.`)) {
             const newRows = localRows.filter(row => row.some(cell => cell !== '' && cell !== undefined && cell !== null));
             setLocalRows(newRows);
+            setEditingCell(null);
+            setCellValue('');
             setHasChanges(true);
         }
     };
 
     const handleDeleteEmptyRowsByColumn = (colIdx: number) => {
+        // Salvar qualquer célula em edição antes de deletar
+        if (editingCell) {
+            handleCellChange(cellValue);
+        }
+
         const emptyInColumn = getEmptyCellsInColumn(colIdx);
         if (emptyInColumn === 0) {
             alert('Não há células vazias nesta coluna.');
@@ -224,6 +250,8 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
         if (window.confirm(`Tem certeza que deseja deletar ${emptyInColumn} linha(s) vazia(s) na coluna "${columnName}"? Esta ação removerá essas linhas inteiras e não pode ser desfeita.`)) {
             const newRows = localRows.filter(row => row[colIdx] !== '' && row[colIdx] !== undefined && row[colIdx] !== null);
             setLocalRows(newRows);
+            setEditingCell(null);
+            setCellValue('');
             setHasChanges(true);
         }
     };
