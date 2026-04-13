@@ -610,6 +610,17 @@ export function StepValidation({
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+      {/* Card de informação sobre linhas vazias */}
+      <Card className="bg-blue-500/5 border-blue-500/20 p-4">
+        <div className="flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
+          <div className="text-sm text-foreground">
+            <span className="font-semibold">ℹ️ Linhas vazias preservadas:</span> Linhas em branco <span className="font-semibold">NÃO serão removidas automaticamente</span>.
+            Se desejar remover linhas vazias, use o editor de dados (com a lixeira) ou processe sem essa opção ligada.
+          </div>
+        </div>
+      </Card>
+
       {/* Card de status */}
       <Card className="bg-card p-8 text-center">
         <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 300 }}>
