@@ -546,6 +546,11 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
                                                             className="px-3 py-2 border-r min-w-[220px] bg-slate-100 dark:bg-slate-800"
                                                         >
                                                             <div className="flex flex-col items-start gap-2.5">
+                                                                {/* Nome original da planilha */}
+                                                                <div className="w-full px-2 py-1.5 rounded bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800">
+                                                                    <p className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Planilha</p>
+                                                                    <p className="text-xs text-foreground font-medium break-words">{originalHeaders[colIdx]}</p>
+                                                                </div>
                                                                 <div className="flex items-center justify-between w-full">
                                                                     <div className="text-[10px] font-mono font-bold text-muted-foreground px-1.5 py-0.5 bg-secondary/40 rounded">
                                                                         {toExcelCol(colIdx)}
@@ -558,15 +563,6 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
                                                                     >
                                                                         <Trash2 className="w-4 h-4 text-destructive" />
                                                                     </button>
-                                                                </div>
-                                                                {/* Nome original da coluna da planilha */}
-                                                                <div className="w-full">
-                                                                    <div className="text-[10px] text-muted-foreground/60 font-semibold uppercase tracking-wide">
-                                                                        ORIGINAL
-                                                                    </div>
-                                                                    <div className="text-sm font-semibold text-foreground break-words mt-0.5">
-                                                                        {originalHeaders[colIdx]}
-                                                                    </div>
                                                                 </div>
                                                                 {/* Contador de células vazias */}
                                                                 {getEmptyCellsInColumn(colIdx) > 0 && (
