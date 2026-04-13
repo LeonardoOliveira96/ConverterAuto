@@ -64,6 +64,10 @@ export function StepProcessing({
     // Isso garante que funcione mesmo se colunas forem deletadas em Step 2
     const currentMapping = autoSuggestMapping(headers, fields);
 
+    // Filtrar para apenas campos que têm mapeamento explícito
+    const mappedFields = fields.filter(f => currentMapping[f.name]);
+    const mappedRequiredFields = mappedFields.filter(f => f.required);
+
     const total = rows.length;
     const BATCH = 500;
     const result: string[][] = [];
@@ -86,8 +90,8 @@ export function StepProcessing({
       });
     }
 
-    // Header row
-    const outputHeaders = fields.map(f => f.name);
+    // Header row - apenas campos mapeados
+    const outputHeaders = mappedFields.map(f => f.name);
     result.push(outputHeaders);
 
     setStatusIdx(0);
@@ -112,7 +116,8 @@ export function StepProcessing({
 
         let skipReason = '';
         if (options.removeEmptyRequired) {
-          for (const rf of requiredFields) {
+          // Validar apenas campos obrigatórios que foram mapeados
+          for (const rf of mappedRequiredFields) {
             const src = currentMapping[rf.name];
             if (!src) continue;
             const ci = headers.indexOf(src);
@@ -150,7 +155,7 @@ export function StepProcessing({
           continue;
         }
 
-        const outputRow: string[] = fields.map(field => {
+        const outputRow: string[] = mappedFields.map(field => {
           const src = currentMapping[field.name];
           if (!src) return '';
           const ci = headers.indexOf(src);
