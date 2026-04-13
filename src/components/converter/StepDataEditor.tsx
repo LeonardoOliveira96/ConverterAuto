@@ -129,8 +129,20 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
 
         const newRows = localRows.filter((_, idx) => idx !== rowIdx);
         setLocalRows(newRows);
-        setEditingCell(null);
-        setCellValue('');
+
+        // Ajustar editingCell se necessário
+        if (editingCell) {
+            if (editingCell.row === rowIdx) {
+                // Se estava editando a linha deletada, limpar
+                setEditingCell(null);
+                setCellValue('');
+            } else if (editingCell.row > rowIdx) {
+                // Se estava editando uma linha depois da deletada, apenas ajustar índice
+                // PRESERVE cellValue - não limpar!
+                setEditingCell({ row: editingCell.row - 1, col: editingCell.col });
+            }
+            // Se editingCell.row < rowIdx, não faz nada
+        }
         setHasChanges(true);
     };
 
@@ -201,8 +213,19 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
             const newOriginalHeaders = originalHeaders.filter((_, idx) => idx !== colIdx);
             setOriginalHeaders(newOriginalHeaders);
 
-            setEditingCell(null);
-            setCellValue('');
+            // Ajustar editingCell se necessário
+            if (editingCell) {
+                if (editingCell.col === colIdx) {
+                    // Se estava editando a coluna deletada, limpar
+                    setEditingCell(null);
+                    setCellValue('');
+                } else if (editingCell.col > colIdx) {
+                    // Se estava editando uma coluna depois da deletada, apenas ajustar índice
+                    // PRESERVE cellValue - não limpar!
+                    setEditingCell({ row: editingCell.row, col: editingCell.col - 1 });
+                }
+                // Se editingCell.col < colIdx, não precisa fazer nada
+            }
             setHasChanges(true);
         }
     };
@@ -228,9 +251,34 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
         }
         if (window.confirm(`Tem certeza que deseja deletar ${emptyCount} linha(s) vazia(s)? Esta ação não pode ser desfeita.`)) {
             const newRows = localRows.filter(row => row.some(cell => cell !== '' && cell !== undefined && cell !== null));
+            
+            // Rastrear qual é o novo índice da linha em edição
+            if (editingCell) {
+                const oldIdx = editingCell.row;
+                let newIdx = 0;
+                let countNonEmpty = 0;
+                for (let i = 0; i < localRows.length; i++) {
+                    const isRowEmpty = !localRows[i].some(cell => cell !== '' && cell !== undefined && cell !== null);
+                    if (i <= oldIdx && !isRowEmpty) {
+                        countNonEmpty++;
+                    }
+                }
+                // Verificar se a linha em edição foi deletada
+                const isEditingRowEmpty = !localRows[oldIdx].some(cell => cell !== '' && cell !== undefined && cell !== null);
+                if (isEditingRowEmpty) {
+                    setEditingCell(null);
+                    setCellValue('');
+                } else {
+                    // Calcular novo índice
+                    newIdx = countNonEmpty - 1;
+                    if (newIdx >= 0 && newIdx < newRows.length) {
+                        setEditingCell({ row: newIdx, col: editingCell.col });
+                        // Preservar cellValue
+                    }
+                }
+            }
+            
             setLocalRows(newRows);
-            setEditingCell(null);
-            setCellValue('');
             setHasChanges(true);
         }
     };
@@ -248,10 +296,28 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
         }
         const columnName = localHeaders[colIdx] || originalHeaders[colIdx] || `Coluna ${toExcelCol(colIdx)}`;
         if (window.confirm(`Tem certeza que deseja deletar ${emptyInColumn} linha(s) vazia(s) na coluna "${columnName}"? Esta ação removerá essas linhas inteiras e não pode ser desfeita.`)) {
-            const newRows = localRows.filter(row => row[colIdx] !== '' && row[colIdx] !== undefined && row[colIdx] !== null);
+            const rowsToKeep = localRows.map((row, idx) => ({ row, idx }));
+            const filteredRowsToKeep = rowsToKeep.filter(({ row }) => row[colIdx] !== '' && row[colIdx] !== undefined && row[colIdx] !== null);
+            const newRows = filteredRowsToKeep.map(({ row }) => row);
+            
+            // Rastrear qual é o novo índice da linha em edição
+            if (editingCell) {
+                const oldIdx = editingCell.row;
+                const keptRowData = filteredRowsToKeep.find(({ idx }) => idx === oldIdx);
+                
+                if (keptRowData) {
+                    // A linha em edição foi mantida, encontrar seu novo índice
+                    const newIdx = filteredRowsToKeep.indexOf(keptRowData);
+                    setEditingCell({ row: newIdx, col: editingCell.col });
+                    // Preservar cellValue
+                } else {
+                    // A linha em edição foi deletada, limpar
+                    setEditingCell(null);
+                    setCellValue('');
+                }
+            }
+            
             setLocalRows(newRows);
-            setEditingCell(null);
-            setCellValue('');
             setHasChanges(true);
         }
     };

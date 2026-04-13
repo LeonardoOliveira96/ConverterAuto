@@ -73,6 +73,7 @@ export default function Index() {
       data: rawData,
     };
     setBackups(prev => [backup, ...prev]);
+
     setStep(4);
   };
 
@@ -106,7 +107,7 @@ export default function Index() {
   const canNext = () => {
     if (step === 0) return fileName !== '';
     if (step === 1) return sheetType !== null;
-    if (step === 2) return Object.keys(mapping).length > 0;
+    if (step === 2) return true; // Sempre pode avançar após editar dados
     if (step === 3) return true;
     return false;
   };
@@ -190,7 +191,7 @@ export default function Index() {
                   shortDescriptionEdits={shortDescriptionEdits}
                   manuallyRemovedRows={manuallyRemovedRows}
                   onComplete={handleProcessComplete}
-                  onCancel={() => setStep(3)}
+                  onCancel={() => setStep(2)}
                 />
               )}
               {step === 5 && result && (
@@ -213,7 +214,7 @@ export default function Index() {
                   >
                     <ArrowLeft className="w-4 h-4" /> Voltar
                   </Button>
-                  {step === 3 ? (
+                  {step === 2 || step === 3 ? (
                     <Button onClick={startProcessing} className="gap-2">
                       Processar <ArrowRight className="w-4 h-4" />
                     </Button>

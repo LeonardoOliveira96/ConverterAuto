@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { SheetType, getFieldsForType } from '@/lib/erp-fields';
+import { SheetType, getFieldsForType, autoSuggestMapping } from '@/lib/erp-fields';
 import {
   CleaningOptions,
   ProcessingResult,
@@ -59,6 +59,11 @@ export function StepProcessing({
     const excluded = new Set(excludedAlterationKeys);
     const fields = getFieldsForType(sheetType);
     const requiredFields = fields.filter(f => f.required);
+
+    // SEMPRE regenerar o mapping com base nos headers ATUAIS
+    // Isso garante que funcione mesmo se colunas forem deletadas em Step 2
+    const currentMapping = autoSuggestMapping(headers, fields);
+
     const total = rows.length;
     const BATCH = 500;
     const result: string[][] = [];
@@ -73,7 +78,7 @@ export function StepProcessing({
 
     function captureRowData(row: SpreadsheetRow): string[] {
       return fields.map(f => {
-        const src = mapping[f.name];
+        const src = currentMapping[f.name];
         if (!src) return '';
         const ci = headers.indexOf(src);
         if (ci === -1) return '';
@@ -108,7 +113,7 @@ export function StepProcessing({
         let skipReason = '';
         if (options.removeEmptyRequired) {
           for (const rf of requiredFields) {
-            const src = mapping[rf.name];
+            const src = currentMapping[rf.name];
             if (!src) continue;
             const ci = headers.indexOf(src);
             if (ci === -1) continue;
@@ -124,7 +129,7 @@ export function StepProcessing({
         }
 
         if (!skip && options.removeEmptyDescription && sheetType === 'produto') {
-          const descSrc = mapping['Descrição do Produto'];
+          const descSrc = currentMapping['Descrição do Produto'];
           if (descSrc) {
             const ci = headers.indexOf(descSrc);
             if (ci !== -1) {
@@ -146,7 +151,7 @@ export function StepProcessing({
         }
 
         const outputRow: string[] = fields.map(field => {
-          const src = mapping[field.name];
+          const src = currentMapping[field.name];
           if (!src) return '';
           const ci = headers.indexOf(src);
           if (ci === -1) return '';
