@@ -123,3 +123,34 @@ export function autoSuggestMapping(sourceColumns: string[], targetFields: FieldD
   }
   return mapping;
 }
+
+export function suggestHeaderName(sourceColumnName: string, sheetType: SheetType): string | null {
+  const fields = getFieldsForType(sheetType);
+  const normalize = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+  const normalizedCol = normalize(sourceColumnName);
+
+  if (normalizedCol.length <= 2) return null;
+
+  let bestField: FieldDef | null = null;
+  let bestScore = -1;
+
+  for (const field of fields) {
+    const normalizedField = normalize(field.name);
+    let score = -1;
+
+    if (normalizedCol === normalizedField) {
+      score = 1;
+    } else if (normalizedCol.includes(normalizedField)) {
+      score = normalizedField.length / normalizedCol.length;
+    } else if (normalizedField.includes(normalizedCol)) {
+      score = normalizedCol.length / normalizedField.length;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestField = field;
+    }
+  }
+
+  return bestField ? bestField.name : null;
+}

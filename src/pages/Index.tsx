@@ -162,6 +162,7 @@ export default function Index() {
                     rows={rows}
                     onRowsChange={setRows}
                     onHeadersChange={setHeaders}
+                    sheetType={sheetType}
                   />
                   <StepColumnMapping
                     sheetType={sheetType}
