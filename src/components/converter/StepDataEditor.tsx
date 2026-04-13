@@ -218,15 +218,37 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
 
     return (
         <>
-            <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsOpen(true)}
-                className="gap-2"
-            >
-                <Edit2 className="w-4 h-4" />
-                Editar Dados Personalizados
-            </Button>
+            <div className="space-y-6">
+                {/* Informações da Planilha */}
+                <Card className="bg-card p-6">
+                    <div className="grid grid-cols-3 gap-6 mb-6">
+                        <div className="text-center">
+                            <p className="text-sm text-muted-foreground mb-1">Total de Linhas</p>
+                            <p className="text-2xl font-bold text-foreground">{localRows.length.toLocaleString('pt-BR')}</p>
+                        </div>
+                        <div className="text-center">
+                            <p className="text-sm text-muted-foreground mb-1">Total de Colunas</p>
+                            <p className="text-2xl font-bold text-foreground">{localHeaders.length}</p>
+                        </div>
+                        <div className="text-center">
+                            <p className="text-sm text-muted-foreground mb-1">Tipo</p>
+                            <p className="text-base font-semibold text-foreground capitalize">{sheetType || 'N/A'}</p>
+                        </div>
+                    </div>
+                    
+                    {/* Botão Centralizado */}
+                    <div className="flex justify-center">
+                        <Button
+                            variant="default"
+                            size="lg"
+                            onClick={() => setIsOpen(true)}
+                            className="gap-2"
+                        >
+                            <Edit2 className="w-4 h-4" />
+                            Editar Dados Personalizados
+                        </Button>
+                    </div>
+                </Card>
 
             <Dialog open={isOpen} onOpenChange={setIsOpen}>
                 <DialogContent className="max-w-[min(96rem,calc(100vw-1.5rem))] w-full h-[min(92vh,900px)] flex flex-col p-0 gap-0 overflow-hidden sm:rounded-lg">
@@ -445,6 +467,7 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
                     </div>
                 </DialogContent>
             </Dialog>
+            </div>
         </>
     );
 }
