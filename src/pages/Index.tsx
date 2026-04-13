@@ -11,7 +11,6 @@ import {
 import { StepperHeader } from '@/components/converter/StepperHeader';
 import { StepUpload } from '@/components/converter/StepUpload';
 import { StepTypeSelection } from '@/components/converter/StepTypeSelection';
-import { StepColumnMapping } from '@/components/converter/StepColumnMapping';
 import { StepDataEditor } from '@/components/converter/StepDataEditor';
 import { StepValidation } from '@/components/converter/StepValidation';
 import { StepProcessing } from '@/components/converter/StepProcessing';
@@ -156,22 +155,13 @@ export default function Index() {
               {step === 0 && <StepUpload onFileLoaded={handleFileLoaded} fileInfo={fileInfo} />}
               {step === 1 && <StepTypeSelection selected={sheetType} onSelect={setSheetType} />}
               {step === 2 && sheetType && (
-                <div className="space-y-6">
-                  <StepDataEditor
-                    headers={headers}
-                    rows={rows}
-                    onRowsChange={setRows}
-                    onHeadersChange={setHeaders}
-                    sheetType={sheetType}
-                  />
-                  <StepColumnMapping
-                    sheetType={sheetType}
-                    sourceColumns={headers}
-                    mapping={mapping}
-                    onMappingChange={setMapping}
-                    sourceData={rows}
-                  />
-                </div>
+                <StepDataEditor
+                  headers={headers}
+                  rows={rows}
+                  onRowsChange={setRows}
+                  onHeadersChange={setHeaders}
+                  sheetType={sheetType}
+                />
               )}
               {step === 3 && sheetType && (
                 <StepValidation
