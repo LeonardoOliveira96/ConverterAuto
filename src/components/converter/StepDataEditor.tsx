@@ -21,6 +21,8 @@ import {
     Sparkles,
     ScanLine,
     Check,
+    CheckCircle2,
+    X,
 } from 'lucide-react';
 import type { SpreadsheetRow } from '@/lib/converter-types';
 import type { SheetType } from '@/lib/erp-fields';
@@ -58,6 +60,14 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
     const [hasChanges, setHasChanges] = useState(false);
     const [ncmColumnHeader, setNcmColumnHeader] = useState<string | null>(null);
     const [ncmEdits, setNcmEdits] = useState<Record<number, string>>({});
+    const [showSummary, setShowSummary] = useState(false);
+    const [changeSummary, setChangeSummary] = useState<{
+        deletedColumns: string[];
+        remainingColumns: string[];
+        deletedRowsCount: number;
+        originalRowsCount: number;
+        renamedColumns: Array<{ from: string; to: string }>;
+    } | null>(null);
 
     const systemFields = useMemo(() =>
         sheetType ? getFieldsForType(sheetType).map(f => f.name) : [],
@@ -159,6 +169,30 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
     };
 
     const handleApply = () => {
+        // Calcular mudanças antes de aplicar
+        const deletedColumns = headers.filter(h => !localHeaders.includes(h));
+        const deletedRowsCount = rows.length - localRows.length;
+
+        // Calcular colunas renomeadas
+        const renamedColumns: Array<{ from: string; to: string }> = [];
+        localHeaders.forEach((localHeader, idx) => {
+            if (idx < headers.length) {
+                const originalHeader = headers[idx];
+                if (originalHeader !== localHeader && !deletedColumns.includes(originalHeader)) {
+                    renamedColumns.push({ from: originalHeader, to: localHeader });
+                }
+            }
+        });
+
+        setChangeSummary({
+            deletedColumns,
+            remainingColumns: localHeaders,
+            deletedRowsCount,
+            originalRowsCount: rows.length,
+            renamedColumns,
+        });
+        setShowSummary(true);
+
         onRowsChange(localRows);
         if (onHeadersChange && localHeaders !== headers) {
             onHeadersChange(localHeaders);
@@ -477,6 +511,108 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
                         </Button>
                     </div>
                 </Card>
+
+                {/* Resumo de Alterações - Abaixo do botão */}
+                {showSummary && changeSummary && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.3 }}
+                    >
+                        <Card className="bg-card p-6 border-l-4 border-l-emerald-500">
+                            <div className="flex items-start justify-between mb-4">
+                                <div className="flex items-center gap-2">
+                                    <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                                    <h3 className="font-semibold text-lg text-foreground">Resumo de Alterações</h3>
+                                </div>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setShowSummary(false)}
+                                    className="h-6 w-6 p-0"
+                                >
+                                    <X className="w-4 h-4" />
+                                </Button>
+                            </div>
+
+                            <div className="space-y-3">
+                                {/* Linhas Removidas */}
+                                <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <Trash2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                        <p className="font-semibold text-blue-900 dark:text-blue-100 text-sm">Linhas Removidas</p>
+                                    </div>
+                                    <p className="text-sm text-blue-800 dark:text-blue-200">
+                                        <span className="font-bold text-base">{changeSummary.deletedRowsCount}</span> linhas apagadas
+                                        {changeSummary.deletedRowsCount > 0 && (
+                                            <span className="block text-xs mt-0.5 text-blue-700 dark:text-blue-300">
+                                                {changeSummary.originalRowsCount} → {changeSummary.originalRowsCount - changeSummary.deletedRowsCount}
+                                            </span>
+                                        )}
+                                    </p>
+                                </div>
+
+                                {/* Colunas Deletadas */}
+                                {changeSummary.deletedColumns.length > 0 && (
+                                    <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <X className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                                            <p className="font-semibold text-amber-900 dark:text-amber-100 text-sm">Colunas Deletadas</p>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {changeSummary.deletedColumns.map((col) => (
+                                                <Badge key={col} variant="destructive" className="text-xs">
+                                                    {col}
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Colunas Renomeadas */}
+                                {changeSummary.renamedColumns.length > 0 && (
+                                    <div className="p-3 rounded-lg bg-purple-50 dark:bg-purple-950 border border-purple-200 dark:border-purple-800">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <Edit2 className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                                            <p className="font-semibold text-purple-900 dark:text-purple-100 text-sm">Colunas Renomeadas</p>
+                                        </div>
+                                        <div className="space-y-2">
+                                            {changeSummary.renamedColumns.map((rename, idx) => (
+                                                <div key={idx} className="flex items-center gap-2 text-sm">
+                                                    <span className="bg-purple-100 dark:bg-purple-900 text-purple-900 dark:text-purple-100 px-2 py-0.5 rounded text-xs font-mono">
+                                                        {rename.from}
+                                                    </span>
+                                                    <span className="text-purple-600 dark:text-purple-400">→</span>
+                                                    <span className="bg-purple-100 dark:bg-purple-900 text-purple-900 dark:text-purple-100 px-2 py-0.5 rounded text-xs font-mono">
+                                                        {rename.to}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Colunas Restantes */}
+                                <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                        <p className="font-semibold text-emerald-900 dark:text-emerald-100 text-sm">
+                                            Colunas Restantes ({changeSummary.remainingColumns.length})
+                                        </p>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {changeSummary.remainingColumns.map((col) => (
+                                            <Badge key={col} className="text-xs bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+                                                {col}
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </Card>
+                    </motion.div>
+                )}
 
                 {/* Card de Limpeza de Caracteres */}
                 <Card className="p-6 border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30">
