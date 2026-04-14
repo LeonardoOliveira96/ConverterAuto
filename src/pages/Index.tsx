@@ -57,7 +57,12 @@ export default function Index() {
   }, []);
 
   const handleProcessComplete = (res: ProcessingResult, data: string[][]) => {
-    setResult(res);
+    // rawData inclui a linha de cabeçalho, por isso -1
+    const deletedInEditor = (rawData.length - 1) - rows.length;
+    const adjustedResult: ProcessingResult = deletedInEditor > 0
+      ? { ...res, removedRows: res.removedRows + deletedInEditor }
+      : res;
+    setResult(adjustedResult);
     setProcessedData(data);
     setStep(5);
   };
@@ -90,6 +95,12 @@ export default function Index() {
     setExcludedAlterationKeys([]);
     setShortDescriptionEdits({});
     setManuallyRemovedRows([]);
+  };
+
+  const handleEditAgain = () => {
+    setStep(2);
+    setResult(null);
+    setProcessedData([]);
   };
 
   const handleRestore = (backup: BackupEntry) => {
@@ -200,6 +211,7 @@ export default function Index() {
                   processedData={processedData}
                   fileName={fileName}
                   onReset={reset}
+                  onEditAgain={handleEditAgain}
                 />
               )}
 
