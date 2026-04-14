@@ -14,6 +14,7 @@ interface StepResultProps {
   processedData: string[][];
   fileName: string;
   onReset: () => void;
+  onEditAgain: () => void;
 }
 
 function useCountUp(target: number, duration = 1200) {
@@ -44,7 +45,7 @@ function AnimatedNumber({ value, suffix = '' }: { value: number; suffix?: string
   return <>{animated.toLocaleString('pt-BR')}{suffix}</>;
 }
 
-export function StepResult({ result, processedData, fileName, onReset }: StepResultProps) {
+export function StepResult({ result, processedData, fileName, onReset, onEditAgain }: StepResultProps) {
   const [logOpen, setLogOpen] = useState(false);
   const [lineFilter, setLineFilter] = useState('');
 
@@ -56,30 +57,36 @@ export function StepResult({ result, processedData, fileName, onReset }: StepRes
     XLSX.writeFile(wb, outName);
   };
 
-  const stats: { label: string; value: number; icon: React.ReactNode; color: string }[] = [
+  const removedCount = result.removedRows;
+
+  const stats: { label: string; value: number; icon: React.ReactNode; color: string; bg: string }[] = [
     {
-      label: 'Linhas processadas',
+      label: 'Total de linhas',
+      value: result.totalRows,
+      icon: <ClipboardList className="w-6 h-6 text-blue-500" />,
+      color: 'text-blue-500',
+      bg: 'bg-blue-500/10',
+    },
+    {
+      label: 'Linhas convertidas',
       value: result.processedRows,
-      icon: <CheckCircle2 className="w-5 h-5 text-emerald-500" />,
+      icon: <CheckCircle2 className="w-6 h-6 text-emerald-500" />,
       color: 'text-emerald-500',
+      bg: 'bg-emerald-500/10',
     },
     {
       label: 'Linhas removidas',
-      value: result.removedRows,
-      icon: <Trash2 className="w-5 h-5 text-amber-500" />,
+      value: removedCount,
+      icon: <Trash2 className="w-6 h-6 text-amber-500" />,
       color: 'text-amber-500',
-    },
-    {
-      label: 'Erros encontrados',
-      value: result.errors.length,
-      icon: <AlertCircle className="w-5 h-5 text-destructive" />,
-      color: 'text-destructive',
+      bg: 'bg-amber-500/10',
     },
     {
       label: 'Caracteres removidos',
       value: result.charsRemoved ?? 0,
-      icon: <Sparkles className="w-5 h-5 text-violet-500" />,
+      icon: <Sparkles className="w-6 h-6 text-violet-500" />,
       color: 'text-violet-500',
+      bg: 'bg-violet-500/10',
     },
   ];
 
@@ -95,82 +102,28 @@ export function StepResult({ result, processedData, fileName, onReset }: StepRes
         <p className="text-muted-foreground mt-2">Sua planilha foi convertida com sucesso para o padrão do ERP.</p>
       </Card>
 
-      {/* Resumo de processamento */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-      >
-        <Card className="bg-card p-6 border-l-4 border-l-emerald-500">
-          <div className="space-y-2 text-sm md:text-base">
-            <p className="text-foreground">
-              <span className="font-semibold">Total de linhas:</span> {result.totalRows.toLocaleString('pt-BR')}
-            </p>
-            <p className="text-emerald-600 dark:text-emerald-400">
-              <span className="font-semibold">✓ Processadas:</span> {result.processedRows.toLocaleString('pt-BR')}
-            </p>
-            {result.removedRows > 0 && (
-              <p className="text-amber-600 dark:text-amber-400">
-                <span className="font-semibold">⊗ Removidas:</span> {result.removedRows.toLocaleString('pt-BR')}
-              </p>
-            )}
-            {(result.charsRemoved ?? 0) > 0 && (
-              <p className="text-violet-600 dark:text-violet-400">
-                <span className="font-semibold">✨ Caracteres removidos:</span> {(result.charsRemoved ?? 0).toLocaleString('pt-BR')}
-              </p>
-            )}
-            {result.errors.length > 0 && (
-              <p className="text-destructive">
-                <span className="font-semibold">⚠ Erros encontrados:</span> {result.errors.length.toLocaleString('pt-BR')}
-              </p>
-            )}
-          </div>
-        </Card>
-      </motion.div>
-
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map((s, i) => (
           <motion.div
             key={s.label}
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 + i * 0.08 }}
+            transition={{ delay: 0.08 + i * 0.08 }}
           >
-            <Card className="bg-card p-5 flex items-center gap-4">
-              {s.icon}
+            <Card className="bg-card p-5 flex flex-col items-center text-center gap-3">
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${s.bg}`}>
+                {s.icon}
+              </div>
               <div>
-                <p className={`text-2xl font-heading font-bold ${s.color}`}>
+                <p className={`text-3xl font-heading font-bold ${s.color}`}>
                   <AnimatedNumber value={s.value} />
                 </p>
-                <p className="text-xs text-muted-foreground">{s.label}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
               </div>
             </Card>
           </motion.div>
         ))}
       </div>
-
-      {/* Detalhes de caracteres removidos */}
-      {result.charTypes && Object.keys(result.charTypes).length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-        >
-          <Card className="bg-card p-6">
-            <h3 className="font-heading font-semibold text-lg text-foreground mb-4">Tipos de caracteres removidos</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {Object.entries(result.charTypes).map(([type, count]) => (
-                <div key={type} className="bg-muted/50 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-foreground">
-                    <AnimatedNumber value={count} />
-                  </p>
-                  <p className="text-xs text-muted-foreground capitalize mt-1">{type}</p>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </motion.div>
-      )}
 
       <div className="flex flex-wrap justify-center gap-4">
         <Button size="lg" onClick={handleDownload} className="gap-2">
@@ -181,6 +134,9 @@ export function StepResult({ result, processedData, fileName, onReset }: StepRes
             <ClipboardList className="w-5 h-5" /> Veja o que foi alterado
           </Button>
         )}
+        <Button size="lg" variant="outline" onClick={onEditAgain} className="gap-2">
+          <Sparkles className="w-5 h-5" /> Editar novamente
+        </Button>
         <Button size="lg" variant="outline" onClick={onReset} className="gap-2">
           <RotateCcw className="w-5 h-5" /> Nova Conversão
         </Button>
