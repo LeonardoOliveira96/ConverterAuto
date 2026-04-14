@@ -1157,11 +1157,10 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
                                             shortRowsFilterCols.length === shortCellsColumns.length ? [] : [...shortCellsColumns]
                                         );
                                     }}
-                                    className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${
-                                        shortRowsFilterCols.length === shortCellsColumns.length
+                                    className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${shortRowsFilterCols.length === shortCellsColumns.length
                                             ? 'bg-amber-700 text-white border-amber-700'
                                             : 'bg-background border-border text-muted-foreground hover:border-amber-400'
-                                    }`}
+                                        }`}
                                 >
                                     {shortRowsFilterCols.length === shortCellsColumns.length ? 'Desmarcar todos' : 'Selecionar todos'}
                                 </button>
@@ -1179,11 +1178,10 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
                                                         prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]
                                                     );
                                                 }}
-                                                className={`px-2 py-0.5 text-xs font-medium transition-colors ${
-                                                    shortRowsFilterCols.includes(col)
+                                                className={`px-2 py-0.5 text-xs font-medium transition-colors ${shortRowsFilterCols.includes(col)
                                                         ? 'bg-amber-500 text-white'
                                                         : 'bg-background text-muted-foreground hover:bg-amber-50 dark:hover:bg-amber-950'
-                                                }`}
+                                                    }`}
                                             >
                                                 {col}
                                             </button>
@@ -1198,11 +1196,10 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
                                                         return next;
                                                     });
                                                 }}
-                                                className={`px-1.5 py-0.5 border-l transition-colors ${
-                                                    allDeleted
+                                                className={`px-1.5 py-0.5 border-l transition-colors ${allDeleted
                                                         ? 'bg-destructive text-destructive-foreground hover:bg-destructive/80'
                                                         : 'bg-background text-destructive hover:bg-destructive/10'
-                                                }`}
+                                                    }`}
                                             >
                                                 <Trash2 className="w-3 h-3" />
                                             </button>
