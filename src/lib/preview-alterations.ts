@@ -69,7 +69,7 @@ export function categorizeSpecialCharsInString(value: string): CharCategory[] {
  * - Substitui C/ → COM e S/ → SEM (antes de remover /)
  * - Remove: & < > " ' \ / |
  */
-export function cleanSefazXmlChars(value: string): string {
+export function cleanSefazXmlChars(value: string, isProduto = false): string {
   let cleaned = String(value ?? '');
 
   // Remove caracteres de controle (exceto tab, newline, carriage return)
@@ -81,9 +81,13 @@ export function cleanSefazXmlChars(value: string): string {
     return true;
   }).join('');
 
-  // Substituições ANTES de remover /: C/ → COM, S/ → SEM
-  cleaned = cleaned.replace(/C\//gi, 'COM ');
-  cleaned = cleaned.replace(/S\//gi, 'SEM ');
+  // S/A → SA (sufixo de empresa) — sempre
+  cleaned = cleaned.replace(/S\/A\b/gi, 'SA');
+  // C/ → COM, S/ → SEM apenas para planilha de produtos
+  if (isProduto) {
+    cleaned = cleaned.replace(/C\//gi, 'COM ');
+    cleaned = cleaned.replace(/S\//gi, 'SEM ');
+  }
 
   // Substituir / \ | por espaço (evita colar palavras: 12UN/269ML → 12UN 269ML)
   cleaned = cleaned.replace(/[/\\|]/g, ' ');
@@ -100,11 +104,16 @@ export function cleanSefazXmlChars(value: string): string {
 /** Substitui C/ → COM e S/ → SEM, depois remove todos os caracteres
  * especiais/inválidos para SEFAZ/XML (incluindo \ / | # etc.).
  */
-export function applySpecialCharsClean(value: string): string {
+export function applySpecialCharsClean(value: string, isProduto = false): string {
   let v = String(value ?? '');
   // 1. Substituições antes de remover /
-  v = v.replace(/C\//gi, 'COM ');
-  v = v.replace(/S\//gi, 'SEM ');
+  // S/A → SA (sufixo de empresa) — sempre
+  v = v.replace(/S\/A\b/gi, 'SA');
+  // C/ → COM, S/ → SEM apenas para planilha de produtos
+  if (isProduto) {
+    v = v.replace(/C\//gi, 'COM ');
+    v = v.replace(/S\//gi, 'SEM ');
+  }
   // 2. Remove caracteres de controle
   v = v.split('').filter(c => {
     const code = c.charCodeAt(0);

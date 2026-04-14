@@ -170,7 +170,7 @@ export function StepProcessing({
           if (options.removeSpecialChars && !skipClean) {
             // Normalizar primeiro para preservar letra sem acento (ã → a, é → e, etc)
             val = val.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-            
+
             if (sheetType === 'produto' && field.name === 'Descrição do Produto') {
               val = removeDescriptionHashtags(val).result;
             }
@@ -186,10 +186,10 @@ export function StepProcessing({
                 charsRemoved++;
               }
             }
-            val = applySpecialCharsClean(val);
+            val = applySpecialCharsClean(val, sheetType === 'produto');
           }
           if (options.removeSefazXmlChars && !skipClean) {
-            val = cleanSefazXmlChars(val);
+            val = cleanSefazXmlChars(val, sheetType === 'produto');
           }
           if (options.normalizeText && !skipClean) {
             val = val.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
