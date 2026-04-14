@@ -27,7 +27,7 @@ import {
 import type { SpreadsheetRow } from '@/lib/converter-types';
 import type { SheetType } from '@/lib/erp-fields';
 import { getFieldsForType, autoSuggestMapping } from '@/lib/erp-fields';
-import { applySpecialCharsClean, categorizeSpecialCharsInString } from '@/lib/preview-alterations';
+import { applySpecialCharsClean, categorizeSpecialCharsInString, isCodeRelatedField } from '@/lib/preview-alterations';
 
 interface StepDataEditorProps {
     headers: string[];

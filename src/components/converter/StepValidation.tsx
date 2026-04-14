@@ -265,7 +265,7 @@ export function StepValidation({
             baseVal = result;
           }
 
-          const cleaned = applySpecialCharsClean(baseVal);
+          const cleaned = applySpecialCharsClean(baseVal, false, isCodeRelatedField(field.name));
 
           if (cleaned !== val) {
             const specialChars = val.split('').filter(c => /[^\w\s.,;:\-()@]/.test(c));

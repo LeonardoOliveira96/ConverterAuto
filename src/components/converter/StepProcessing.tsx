@@ -9,7 +9,7 @@ import {
   SpreadsheetRow,
   ShortDescriptionEdits,
 } from '@/lib/converter-types';
-import { buildCleanKey, buildRemoveKey, buildShortDescKey, cleanSefazXmlChars, applySpecialCharsClean, removeDescriptionHashtags, categorizeSpecialCharsInString } from '@/lib/preview-alterations';
+import { buildCleanKey, buildRemoveKey, buildShortDescKey, cleanSefazXmlChars, applySpecialCharsClean, removeDescriptionHashtags, categorizeSpecialCharsInString, isCodeRelatedField } from '@/lib/preview-alterations';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -186,10 +186,10 @@ export function StepProcessing({
                 charsRemoved++;
               }
             }
-            val = applySpecialCharsClean(val, sheetType === 'produto');
+            val = applySpecialCharsClean(val, sheetType === 'produto', isCodeRelatedField(field.name));
           }
           if (options.removeSefazXmlChars && !skipClean) {
-            val = cleanSefazXmlChars(val, sheetType === 'produto');
+            val = cleanSefazXmlChars(val, sheetType === 'produto', isCodeRelatedField(field.name));
           }
           if (options.normalizeText && !skipClean) {
             val = val.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -203,6 +203,19 @@ export function StepProcessing({
           ) {
             val = shortDescriptionEdits[String(sheetRow)];
           }
+
+          // Normalização mínima sempre aplicada: remove espaços invisíveis e faz trim.
+          // Isso evita que o ERP trate como registros distintos ao importar o mesmo arquivo
+          // mais de uma vez (espaços/non-breaking spaces são removidos pelo Excel ao salvar
+          // manualmente, mas precisam ser tratados aqui na geração programática).
+          val = val
+            .replace(/\u00A0/g, ' ')   // non-breaking space
+            .replace(/\uFEFF/g, '')     // BOM / zero-width no-break space
+            .replace(/\u200B/g, '')     // zero-width space
+            .replace(/\u200C/g, '')     // zero-width non-joiner
+            .replace(/\u200D/g, '')     // zero-width joiner
+            .replace(/\s{2,}/g, ' ')
+            .trim();
 
           if (val !== originalVal) {
             cleanedFieldsLog.push({ sheetRow, field: field.name, before: originalVal, after: val });
