@@ -22,6 +22,11 @@ const CODE_RELATED_FIELDS = new Set([
   'CEST',
   'CFOP',
   'Código Cliente',
+  // Campos de documento — a barra faz parte do formato (ex: CNPJ 00.000.000/0001-00)
+  'CPF/CNPJ',
+  'RG',
+  'Inscrição Estadual',
+  'Inscrição Municipal',
 ]);
 
 export function isCodeRelatedField(fieldName: string): boolean {
@@ -68,8 +73,9 @@ export function categorizeSpecialCharsInString(value: string): CharCategory[] {
  * - Remove caracteres de controle (0x00-0x1F exceto tab, newline, CR)
  * - Substitui C/ → COM e S/ → SEM (antes de remover /)
  * - Remove: & < > " ' \ / |
+ * @param isCodeField Quando true, a barra / NÃO é substituída (ex: CNPJ 00.000.000/0001-00)
  */
-export function cleanSefazXmlChars(value: string, isProduto = false): string {
+export function cleanSefazXmlChars(value: string, isProduto = false, isCodeField = false): string {
   let cleaned = String(value ?? '');
 
   // Remove caracteres de controle (exceto tab, newline, carriage return)
@@ -89,8 +95,12 @@ export function cleanSefazXmlChars(value: string, isProduto = false): string {
     cleaned = cleaned.replace(/S\//gi, 'SEM ');
   }
 
-  // Substituir / \ | por espaço (evita colar palavras: 12UN/269ML → 12UN 269ML)
-  cleaned = cleaned.replace(/[/\\|]/g, ' ');
+  // Substituir \ | por espaço (e / também, exceto em campos de código como CNPJ)
+  if (isCodeField) {
+    cleaned = cleaned.replace(/[\\|]/g, ' ');
+  } else {
+    cleaned = cleaned.replace(/[/\\|]/g, ' ');
+  }
 
   // Remove demais caracteres não permitidos em XML: & < > " '
   cleaned = cleaned.replace(/[&<>"']/g, '');
@@ -103,8 +113,9 @@ export function cleanSefazXmlChars(value: string, isProduto = false): string {
 
 /** Substitui C/ → COM e S/ → SEM, depois remove todos os caracteres
  * especiais/inválidos para SEFAZ/XML (incluindo \ / | # etc.).
+ * @param isCodeField Quando true, a barra / NÃO é substituída (ex: CNPJ 00.000.000/0001-00)
  */
-export function applySpecialCharsClean(value: string, isProduto = false): string {
+export function applySpecialCharsClean(value: string, isProduto = false, isCodeField = false): string {
   let v = String(value ?? '');
   // 1. Substituições antes de remover /
   // S/A → SA (sufixo de empresa) — sempre
@@ -119,8 +130,12 @@ export function applySpecialCharsClean(value: string, isProduto = false): string
     const code = c.charCodeAt(0);
     return !(code < 0x09 || (code > 0x09 && code < 0x0A) || (code > 0x0A && code < 0x0D) || (code > 0x0D && code < 0x20) || code === 0x7F);
   }).join('');
-  // 3. Substituir / \ | por espaço (evita colar palavras: 12UN/269ML → 12UN 269ML)
-  v = v.replace(/[/\\|]/g, ' ');
+  // 3. Substituir \ | por espaço (e / também, exceto em campos de código como CNPJ)
+  if (isCodeField) {
+    v = v.replace(/[\\|]/g, ' ');
+  } else {
+    v = v.replace(/[/\\|]/g, ' ');
+  }
   // 4. Remove demais caracteres não permitidos
   v = v.replace(/[^\w\s.,;:\-()@]/g, '');
   // 5. Colapsar múltiplos espaços
