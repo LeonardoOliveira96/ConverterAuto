@@ -17,12 +17,13 @@ import { StepProcessing } from '@/components/converter/StepProcessing';
 import { StepResult } from '@/components/converter/StepResult';
 import { BackupHistory } from '@/components/converter/BackupHistory';
 import { MatchPlanilhas } from '@/components/converter/MatchPlanilhas';
+import { AuditValidation } from '@/components/converter/AuditValidation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { ArrowLeft, ArrowRight, History, FileSpreadsheet, Barcode } from 'lucide-react';
+import { ArrowLeft, ArrowRight, History, FileSpreadsheet, Barcode, ShieldCheck } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
-type ToolMode = null | 'converter' | 'match';
+type ToolMode = null | 'converter' | 'match' | 'audit';
 
 export default function Index() {
   const [toolMode, setToolMode] = useState<ToolMode>(null);
@@ -155,7 +156,7 @@ export default function Index() {
               <span className="text-muted-foreground text-sm">
                 /
                 <span className="ml-2 text-foreground font-medium">
-                  {toolMode === 'converter' ? 'Conversor ERP' : 'Match Inteligente'}
+                  {toolMode === 'converter' ? 'Conversor ERP' : toolMode === 'match' ? 'Match Inteligente' : 'Auditoria de Exportação'}
                 </span>
               </span>
             )}
@@ -227,6 +228,25 @@ export default function Index() {
                   </h3>
                   <p className="text-sm text-muted-foreground mt-1">
                     Associe automaticamente códigos de barras (EAN) de uma planilha base para outra usando correspondência inteligente por descrição
+                  </p>
+                </Card>
+
+                {/* Card: Auditoria de Exportação */}
+                <Card
+                  onClick={() => setToolMode('audit')}
+                  className="p-8 cursor-pointer transition-all duration-200 hover:shadow-lg hover:bg-secondary/50 group md:col-span-2"
+                >
+                  <div className="w-16 h-16 rounded-2xl bg-secondary text-secondary-foreground flex items-center justify-center mb-4 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                    <ShieldCheck className="w-8 h-8" />
+                  </div>
+                  <h3 className="font-heading font-semibold text-lg text-foreground">
+                    Validação de Consistência entre Planilhas
+                    <span className="block text-xs font-normal text-muted-foreground mt-0.5">
+                      Auditoria de Exportação
+                    </span>
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Compare a planilha original com a planilha gerada pelo sistema e identifique divergências de valores, erros de conversão e inconsistências de dados usando correspondência inteligente por descrição e código interno
                   </p>
                 </Card>
               </div>
@@ -331,6 +351,13 @@ export default function Index() {
           {toolMode === 'match' && (
             <motion.div key="match" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <MatchPlanilhas onBack={() => setToolMode(null)} />
+            </motion.div>
+          )}
+
+          {/* ── Auditoria de Exportação ── */}
+          {toolMode === 'audit' && (
+            <motion.div key="audit" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <AuditValidation onBack={() => setToolMode(null)} />
             </motion.div>
           )}
 
