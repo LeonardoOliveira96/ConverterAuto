@@ -1,3 +1,5 @@
+/// <reference lib="webworker" />
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface WorkerPoolItem {
   id: number;       // índice na sheet1.rows original
@@ -107,7 +109,7 @@ self.onmessage = function (e: MessageEvent<WorkerInput>) {
   const { pool, p2Items, useValor, useCusto, useEstoque } = e.data;
   const total = p2Items.length;
 
-  const post = (msg: WorkerMessage) => (self as DedicatedWorkerGlobalScope).postMessage(msg);
+  const post = (msg: WorkerMessage) => (self as unknown as DedicatedWorkerGlobalScope).postMessage(msg);
 
   try {
     // ── Construir índice invertido de tokens ──────────────────────────────────
