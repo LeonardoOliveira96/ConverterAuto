@@ -51,6 +51,28 @@ export function StepResult({ result, processedData, fileName, onReset, onEditAga
 
   const handleDownload = () => {
     const ws = XLSX.utils.aoa_to_sheet(processedData);
+
+    // Forçar colunas de código/barras como texto para evitar notação científica no Excel
+    if (processedData.length > 0) {
+      const hdrs = processedData[0];
+      for (let c = 0; c < hdrs.length; c++) {
+        const h = String(hdrs[c] ?? '').toLowerCase();
+        if (h.includes('barras') || h.includes('barcode') || h.includes('ean') || h.includes('gtin')) {
+          const colRef = XLSX.utils.encode_col(c);
+          for (let r = 1; r < processedData.length; r++) {
+            const addr = `${colRef}${r + 1}`;
+            const cell = ws[addr];
+            if (cell && cell.v !== '' && cell.v !== null && cell.v !== undefined) {
+              cell.t = 's';
+              cell.z = '@';
+              cell.v = String(cell.v);
+              delete cell.w; // força SheetJS a recalcular o texto formatado
+            }
+          }
+        }
+      }
+    }
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Dados');
     const outName = fileName.replace(/\.[^.]+$/, '') + '_convertido.xlsx';
