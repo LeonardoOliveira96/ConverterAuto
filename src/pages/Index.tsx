@@ -18,12 +18,16 @@ import { StepResult } from '@/components/converter/StepResult';
 import { BackupHistory } from '@/components/converter/BackupHistory';
 import { MatchPlanilhas } from '@/components/converter/MatchPlanilhas';
 import { AuditValidation } from '@/components/converter/AuditValidation';
+import { ExtractorUnidades } from '@/components/converter/ExtractorUnidades';
+import { SeparadorCodigoBarras } from '@/components/converter/SeparadorCodigoBarras';
+import { LimpadorEAN } from '@/components/converter/LimpadorEAN';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { ArrowLeft, ArrowRight, History, FileSpreadsheet, Barcode, ShieldCheck } from 'lucide-react';
+import { toast } from '@/components/ui/sonner';
+import { ArrowLeft, ArrowRight, History, FileSpreadsheet, Barcode, ShieldCheck, Scissors, ScanLine } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
-type ToolMode = null | 'converter' | 'match' | 'audit';
+type ToolMode = null | 'converter' | 'match' | 'audit' | 'units' | 'barsep' | 'cleaner';
 
 export default function Index() {
   const [toolMode, setToolMode] = useState<ToolMode>(null);
@@ -70,6 +74,18 @@ export default function Index() {
       : res;
     setResult(adjustedResult);
     setProcessedData(data);
+
+    toast.dismiss('processing');
+    if (adjustedResult.errors.length > 0) {
+      toast.warning('Validação inconclusiva em alguns itens', {
+        description: `${adjustedResult.errors.length} problema(s) encontrado(s) durante o processamento`,
+      });
+    } else {
+      toast.success('Processo concluído com sucesso', {
+        description: `${adjustedResult.processedRows} linha(s) processada(s) com êxito`,
+      });
+    }
+
     setStep(5);
   };
 
@@ -85,6 +101,7 @@ export default function Index() {
     };
     setBackups(prev => [backup, ...prev]);
 
+    toast.loading('Processando dados, aguarde...', { id: 'processing' });
     setStep(4);
   };
 
@@ -156,7 +173,7 @@ export default function Index() {
               <span className="text-muted-foreground text-sm">
                 /
                 <span className="ml-2 text-foreground font-medium">
-                  {toolMode === 'converter' ? 'Conversor ERP' : toolMode === 'match' ? 'Match Inteligente' : 'Auditoria de Exportação'}
+                  {toolMode === 'converter' ? 'Conversor ERP' : toolMode === 'match' ? 'Match Inteligente' : toolMode === 'audit' ? 'Auditoria de Exportação' : toolMode === 'units' ? 'Extrator de Unidades' : toolMode === 'barsep' ? 'Separador de Código de Barras' : 'Limpador EAN + Descrição'}
                 </span>
               </span>
             )}
@@ -195,19 +212,26 @@ export default function Index() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
                 {/* Card: Conversor ERP */}
                 <Card
                   onClick={() => setToolMode('converter')}
-                  className="p-8 cursor-pointer transition-all duration-200 hover:shadow-lg hover:bg-secondary/50 group"
+                  className="p-6 cursor-pointer transition-all duration-200 hover:shadow-lg hover:bg-secondary/50 group flex flex-col"
                 >
-                  <div className="w-16 h-16 rounded-2xl bg-secondary text-secondary-foreground flex items-center justify-center mb-4 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                    <FileSpreadsheet className="w-8 h-8" />
+                  <div className="flex items-center gap-1.5 mb-4">
+                    <span className="text-xs">🔄</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                      Conversão
+                    </span>
                   </div>
-                  <h3 className="font-heading font-semibold text-lg text-foreground">
+                  <div className="w-12 h-12 rounded-xl bg-secondary text-secondary-foreground flex items-center justify-center mb-3 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                    <FileSpreadsheet className="w-6 h-6" />
+                  </div>
+                  <h3 className="font-heading font-semibold text-base text-foreground leading-snug">
                     Conversor de Planilhas ERP
                   </h3>
-                  <p className="text-sm text-muted-foreground mt-1">
+                  <p className="text-xs text-muted-foreground mt-1.5 flex-1">
                     Converta e normalize planilhas de produtos, clientes e fornecedores para o formato ERP
                   </p>
                 </Card>
@@ -215,40 +239,113 @@ export default function Index() {
                 {/* Card: Match Inteligente */}
                 <Card
                   onClick={() => setToolMode('match')}
-                  className="p-8 cursor-pointer transition-all duration-200 hover:shadow-lg hover:bg-secondary/50 group"
+                  className="p-6 cursor-pointer transition-all duration-200 hover:shadow-lg hover:bg-secondary/50 group flex flex-col"
                 >
-                  <div className="w-16 h-16 rounded-2xl bg-secondary text-secondary-foreground flex items-center justify-center mb-4 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                    <Barcode className="w-8 h-8" />
-                  </div>
-                  <h3 className="font-heading font-semibold text-lg text-foreground">
-                    Match Inteligente de Planilhas
-                    <span className="block text-xs font-normal text-muted-foreground mt-0.5">
-                      Código de Barras
+                  <div className="flex items-center gap-1.5 mb-4">
+                    <span className="text-xs">🧠</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                      Inteligência
                     </span>
+                  </div>
+                  <div className="w-12 h-12 rounded-xl bg-secondary text-secondary-foreground flex items-center justify-center mb-3 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                    <Barcode className="w-6 h-6" />
+                  </div>
+                  <h3 className="font-heading font-semibold text-base text-foreground leading-snug">
+                    Match Inteligente de Planilhas
                   </h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Associe automaticamente códigos de barras (EAN) de uma planilha base para outra usando correspondência inteligente por descrição
+                  <p className="text-xs text-muted-foreground mt-1.5 flex-1">
+                    Associe códigos de barras (EAN) entre planilhas usando correspondência inteligente por descrição
                   </p>
                 </Card>
 
-                {/* Card: Auditoria de Exportação */}
+                {/* Card: Auditoria */}
                 <Card
                   onClick={() => setToolMode('audit')}
-                  className="p-8 cursor-pointer transition-all duration-200 hover:shadow-lg hover:bg-secondary/50 group md:col-span-2"
+                  className="p-6 cursor-pointer transition-all duration-200 hover:shadow-lg hover:bg-secondary/50 group flex flex-col"
                 >
-                  <div className="w-16 h-16 rounded-2xl bg-secondary text-secondary-foreground flex items-center justify-center mb-4 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                    <ShieldCheck className="w-8 h-8" />
-                  </div>
-                  <h3 className="font-heading font-semibold text-lg text-foreground">
-                    Validação de Consistência entre Planilhas
-                    <span className="block text-xs font-normal text-muted-foreground mt-0.5">
-                      Auditoria de Exportação
+                  <div className="flex items-center gap-1.5 mb-4">
+                    <span className="text-xs">🔍</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                      Auditoria
                     </span>
+                  </div>
+                  <div className="w-12 h-12 rounded-xl bg-secondary text-secondary-foreground flex items-center justify-center mb-3 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                    <ShieldCheck className="w-6 h-6" />
+                  </div>
+                  <h3 className="font-heading font-semibold text-base text-foreground leading-snug">
+                    Validação de Consistência
                   </h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Compare a planilha original com a planilha gerada pelo sistema e identifique divergências de valores, erros de conversão e inconsistências de dados usando correspondência inteligente por descrição e código interno
+                  <p className="text-xs text-muted-foreground mt-1.5 flex-1">
+                    Compare planilha original com a gerada e identifique divergências de valores e inconsistências
                   </p>
                 </Card>
+
+                {/* Card: Extrator de Unidades */}
+                <Card
+                  onClick={() => setToolMode('units')}
+                  className="p-6 cursor-pointer transition-all duration-200 hover:shadow-lg hover:bg-secondary/50 group flex flex-col border-violet-200 dark:border-violet-800"
+                >
+                  <div className="flex items-center gap-1.5 mb-4">
+                    <span className="text-xs">⚙️</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                      Ferramentas
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 rounded-xl bg-violet-100 dark:bg-violet-900/50 text-violet-600 dark:text-violet-400 flex items-center justify-center mb-3 group-hover:bg-violet-600 group-hover:text-white transition-colors">
+                    <Scissors className="w-6 h-6" />
+                  </div>
+                  <h3 className="font-heading font-semibold text-base text-foreground leading-snug">
+                    Extrator de Unidades
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1.5 flex-1">
+                    Extrai unidades do final da descrição (UN, KG, LT, ML, CX, PC, FD, SC)
+                  </p>
+                </Card>
+
+                {/* Card: Separador de Código de Barras */}
+                <Card
+                  onClick={() => setToolMode('barsep')}
+                  className="p-6 cursor-pointer transition-all duration-200 hover:shadow-lg hover:bg-secondary/50 group flex flex-col border-indigo-200 dark:border-indigo-800"
+                >
+                  <div className="flex items-center gap-1.5 mb-4">
+                    <span className="text-xs">⚙️</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                      Ferramentas
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-3 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                    <Barcode className="w-6 h-6" />
+                  </div>
+                  <h3 className="font-heading font-semibold text-base text-foreground leading-snug">
+                    Separador de Código de Barras
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1.5 flex-1">
+                    Separa EAN e Produto de uma coluna combinada em colunas distintas
+                  </p>
+                </Card>
+
+                {/* Card: Limpador EAN + Descrição */}
+                <Card
+                  onClick={() => setToolMode('cleaner')}
+                  className="p-6 cursor-pointer transition-all duration-200 hover:shadow-lg hover:bg-secondary/50 group flex flex-col border-teal-200 dark:border-teal-800"
+                >
+                  <div className="flex items-center gap-1.5 mb-4">
+                    <span className="text-xs">⚙️</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                      Ferramentas
+                    </span>
+                  </div>
+                  <div className="w-12 h-12 rounded-xl bg-teal-100 dark:bg-teal-900/50 text-teal-600 dark:text-teal-400 flex items-center justify-center mb-3 group-hover:bg-teal-600 group-hover:text-white transition-colors">
+                    <ScanLine className="w-6 h-6" />
+                  </div>
+                  <h3 className="font-heading font-semibold text-base text-foreground leading-snug">
+                    Limpador EAN + Descrição
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1.5 flex-1">
+                    Separa código de barras (8–14 dígitos) da descrição em uma única coluna
+                  </p>
+                </Card>
+
               </div>
             </motion.div>
           )}
@@ -358,6 +455,27 @@ export default function Index() {
           {toolMode === 'audit' && (
             <motion.div key="audit" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <AuditValidation onBack={() => setToolMode(null)} />
+            </motion.div>
+          )}
+
+          {/* ── Extrator de Unidades ── */}
+          {toolMode === 'units' && (
+            <motion.div key="units" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <ExtractorUnidades onBack={() => setToolMode(null)} />
+            </motion.div>
+          )}
+
+          {/* ── Separador de Código de Barras ── */}
+          {toolMode === 'barsep' && (
+            <motion.div key="barsep" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <SeparadorCodigoBarras onBack={() => setToolMode(null)} />
+            </motion.div>
+          )}
+
+          {/* ── Limpador EAN + Descrição ── */}
+          {toolMode === 'cleaner' && (
+            <motion.div key="cleaner" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <LimpadorEAN onBack={() => setToolMode(null)} />
             </motion.div>
           )}
 
