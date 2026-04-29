@@ -4,6 +4,7 @@ export interface WorkerPoolItem {
   norm: string;     // descrição normalizada
   barcode: string;
   valor: number;
+  custo: number;
   estoque: number;
 }
 
@@ -12,6 +13,7 @@ export interface WorkerP2Item {
   rawDesc: string;  // descrição original (para log)
   normDesc: string; // descrição normalizada
   valor: number;
+  custo: number;
   estoque: number;
 }
 
@@ -19,6 +21,7 @@ export interface WorkerInput {
   pool: WorkerPoolItem[];
   p2Items: WorkerP2Item[];
   useValor: boolean;
+  useCusto: boolean;
   useEstoque: boolean;
 }
 
@@ -27,6 +30,7 @@ export interface MatchEntry {
   barcode: string;
   found: boolean;
   score: number; // 0–1, maior = melhor
+  phase: 1 | 2;
 }
 
 export type WorkerMessage =
@@ -85,25 +89,32 @@ function numericProx(a: number, b: number): number {
 }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
-const MATCH_THRESHOLD = 0.30;  // pontuação mínima para considerar um match válido
-const TOP_K = 6;               // quantos candidatos manter por item da P2
+// Fase 1 – Alta confiança: descrição + campos numéricos devem estar alinhados
+const PHASE1_COMBINED = 0.76; // score combinado mínimo (~76%)
+const PHASE1_TEXT_MIN = 0.63; // componente textual mínimo isolado
+const PHASE1_TEXT_W   = 0.65; // 65% descrição, 35% numérico (valor/custo/estoque)
+
+// Fase 2 – Complemento: descrição é o sinal dominante, numérico é auxiliar
+// Aceita match mesmo que preços divirjam, desde que a descrição seja boa
+const PHASE2_COMBINED = 0.54; // score combinado mínimo (mais permissivo)
+const PHASE2_TEXT_MIN = 0.55; // componente textual mínimo
+const PHASE2_TEXT_W   = 0.88; // 88% descrição, 12% numérico
+
+const TOP_K = 8;               // candidatos máximos por item da P2
 
 // ─── Worker entry point ───────────────────────────────────────────────────────
 self.onmessage = function (e: MessageEvent<WorkerInput>) {
-  const { pool, p2Items, useValor, useEstoque } = e.data;
+  const { pool, p2Items, useValor, useCusto, useEstoque } = e.data;
   const total = p2Items.length;
 
   const post = (msg: WorkerMessage) => (self as DedicatedWorkerGlobalScope).postMessage(msg);
 
   try {
-    // ── Fase 1: Construir índice invertido de tokens ──────────────────────────
-    post({ type: 'progress', done: 0, total, phase: 'Construindo índice de tokens (P1)…' });
+    // ── Construir índice invertido de tokens ──────────────────────────────────
+    post({ type: 'progress', done: 0, total, phase: 'Construindo índice de busca…' });
 
-    /** token → lista de poolIds que contêm esse token */
     const invertedIdx = new Map<string, number[]>();
-    /** poolId → tokens pré-calculados */
     const tokenCache  = new Map<number, string[]>();
-    /** poolId → PoolItem (lookup O(1)) */
     const poolMap     = new Map<number, WorkerPoolItem>();
 
     for (const item of pool) {
@@ -117,86 +128,156 @@ self.onmessage = function (e: MessageEvent<WorkerInput>) {
       }
     }
 
-    // ── Fase 2: Pontuar candidatos para cada item da P2 ──────────────────────
-    post({ type: 'progress', done: 0, total, phase: 'Calculando similaridade…' });
+    /** Candidatos via índice invertido + fallback ao pool completo */
+    function getCandidateIds(normDesc: string): Set<number> {
+      const toks = tokenize(normDesc);
+      const ids  = new Set<number>();
+      for (const t of toks) invertedIdx.get(t)?.forEach((id) => ids.add(id));
+      if (ids.size < 5) pool.forEach((item) => ids.add(item.id));
+      return ids;
+    }
 
-    type Candidate = { id: number; score: number };
-    const allCandidates: Candidate[][] = [];
+    /** Score combinado (texto + numérico) para um par P2 ↔ P1 */
+    function calcScore(
+      p2: WorkerP2Item,
+      p2Toks: string[],
+      p1Id: number,
+      textWeight: number,
+    ): { textScore: number; combined: number } {
+      const p1     = poolMap.get(p1Id)!;
+      const p1Toks = tokenCache.get(p1Id)!;
+
+      const jaccard   = tokenJaccard(p2Toks, p1Toks);
+      const bigram    = bigramDice(p2.normDesc, p1.norm);
+      const textScore = 0.5 * jaccard + 0.5 * bigram;
+
+      const numFactors: number[] = [];
+      if (useValor)   numFactors.push(numericProx(p2.valor,   p1.valor));
+      if (useCusto)   numFactors.push(numericProx(p2.custo,   p1.custo));
+      if (useEstoque) numFactors.push(numericProx(p2.estoque, p1.estoque));
+
+      const combined = numFactors.length === 0
+        ? textScore
+        : textWeight * textScore + (1 - textWeight) * (numFactors.reduce((a, b) => a + b, 0) / numFactors.length);
+
+      return { textScore, combined };
+    }
+
+    type Candidate = { id: number; textScore: number; combined: number };
+
+    // ════════════════════════════════════════════════════════════════════════
+    // FASE 1 — Alta confiança: descrição + validação numérica completa
+    // Aceita apenas quando TODOS os sinais (texto + preços + estoque) concordam
+    // ════════════════════════════════════════════════════════════════════════
+    post({ type: 'progress', done: 0, total, phase: 'Fase 1: Calculando matches de alta confiança…' });
+
+    const phase1Cands: Candidate[][] = Array.from({ length: total }, () => []);
 
     for (let i = 0; i < total; i++) {
-      const p2 = p2Items[i];
+      const p2     = p2Items[i];
       const p2Toks = tokenize(p2.normDesc);
 
-      // Candidatos via índice invertido (O(tokens × candidatos_por_token))
-      const candIds = new Set<number>();
-      for (const t of p2Toks) {
-        invertedIdx.get(t)?.forEach((id) => candIds.add(id));
-      }
-
-      // Fallback: se poucos candidatos por token, busca no pool completo
-      if (candIds.size < 5) {
-        pool.forEach((item) => candIds.add(item.id));
-      }
-
-      // Pontuar candidatos
-      const scored: Candidate[] = [];
-      for (const id of candIds) {
-        const p1     = poolMap.get(id)!;
-        const p1Toks = tokenCache.get(id)!;
-
-        // Similaridade textual (principal) — média Jaccard + Dice
-        const jaccard = tokenJaccard(p2Toks, p1Toks);
-        const bigram  = bigramDice(p2.normDesc, p1.norm);
-        let score     = 0.5 * jaccard + 0.5 * bigram;
-
-        // Validação numérica (secundária, peso pequeno)
-        if (useValor || useEstoque) {
-          let numSum = 0, cnt = 0;
-          if (useValor)   { numSum += numericProx(p2.valor,   p1.valor);   cnt++; }
-          if (useEstoque) { numSum += numericProx(p2.estoque, p1.estoque); cnt++; }
-          score = 0.85 * score + 0.15 * (numSum / Math.max(cnt, 1));
+      for (const id of getCandidateIds(p2.normDesc)) {
+        const { textScore, combined } = calcScore(p2, p2Toks, id, PHASE1_TEXT_W);
+        if (textScore >= PHASE1_TEXT_MIN && combined >= PHASE1_COMBINED) {
+          phase1Cands[i].push({ id, textScore, combined });
         }
-
-        if (score >= MATCH_THRESHOLD) scored.push({ id, score });
       }
 
-      // Manter os TOP_K melhores
-      scored.sort((a, b) => b.score - a.score);
-      allCandidates.push(scored.slice(0, TOP_K));
+      phase1Cands[i].sort((a, b) => b.combined - a.combined);
+      if (phase1Cands[i].length > TOP_K) phase1Cands[i].length = TOP_K;
 
-      if ((i + 1) % 100 === 0 || i === total - 1) {
-        post({ type: 'progress', done: i + 1, total, phase: 'Calculando similaridade…' });
+      if ((i + 1) % 150 === 0 || i === total - 1) {
+        post({ type: 'progress', done: i + 1, total, phase: 'Fase 1: Calculando matches de alta confiança…' });
       }
     }
 
-    // ── Fase 3: Atribuição greedy por confiança (sem duplicatas) ─────────────
-    // Itens mais confiantes escolhem primeiro → evita que baixa confiança
-    // "roube" o código de barras de quem tinha certeza.
-    post({ type: 'progress', done: 0, total, phase: 'Resolvendo correspondências únicas…' });
+    // Atribuição greedy Fase 1 — mais confiantes escolhem primeiro
+    post({ type: 'progress', done: 0, total, phase: 'Fase 1: Resolvendo correspondências definitivas…' });
 
-    const order = Array.from({ length: total }, (_, i) => i);
-    order.sort((a, b) => (allCandidates[b][0]?.score ?? 0) - (allCandidates[a][0]?.score ?? 0));
+    const usedIds    = new Set<number>();
+    const assignment = new Map<number, { barcode: string; score: number; phase: 1 | 2 }>();
 
-    const usedIds   = new Set<number>();
-    const assignment = new Map<number, { barcode: string; score: number }>();
+    const order1 = Array.from({ length: total }, (_, i) => i)
+      .sort((a, b) => (phase1Cands[b][0]?.combined ?? 0) - (phase1Cands[a][0]?.combined ?? 0));
 
-    for (const p2Idx of order) {
-      let assigned = false;
-      for (const cand of allCandidates[p2Idx]) {
+    for (const p2Idx of order1) {
+      for (const cand of phase1Cands[p2Idx]) {
         if (!usedIds.has(cand.id)) {
           usedIds.add(cand.id);
-          assignment.set(p2Idx, { barcode: poolMap.get(cand.id)!.barcode, score: cand.score });
-          assigned = true;
+          assignment.set(p2Idx, { barcode: poolMap.get(cand.id)!.barcode, score: cand.combined, phase: 1 });
           break;
         }
       }
-      if (!assigned) assignment.set(p2Idx, { barcode: '', score: 0 });
     }
 
-    // ── Fase 4: Montar resultado na ordem original ────────────────────────────
+    const unmatched1 = Array.from({ length: total }, (_, i) => i).filter((i) => !assignment.has(i));
+    const phase1Count = total - unmatched1.length;
+
+    post({
+      type:  'progress',
+      done:  phase1Count,
+      total,
+      phase: `Fase 1 concluída: ${phase1Count} matches definitivos. Iniciando Fase 2 (${unmatched1.length} itens)…`,
+    });
+
+    // ════════════════════════════════════════════════════════════════════════
+    // FASE 2 — Complemento: descrição dominante, numérico apenas como apoio
+    // Processa SOMENTE itens não resolvidos na Fase 1.
+    // Aceita match mesmo que preços não batam, desde que descrição seja boa.
+    // ════════════════════════════════════════════════════════════════════════
+    if (unmatched1.length > 0) {
+      const phase2Cands: Candidate[][] = Array.from({ length: unmatched1.length }, () => []);
+
+      for (let k = 0; k < unmatched1.length; k++) {
+        const i      = unmatched1[k];
+        const p2     = p2Items[i];
+        const p2Toks = tokenize(p2.normDesc);
+
+        // Fase 2 varre TODOS os candidatos disponíveis (não usados pela Fase 1)
+        for (const item of pool) {
+          if (usedIds.has(item.id)) continue;
+          const { textScore, combined } = calcScore(p2, p2Toks, item.id, PHASE2_TEXT_W);
+          if (textScore >= PHASE2_TEXT_MIN && combined >= PHASE2_COMBINED) {
+            phase2Cands[k].push({ id: item.id, textScore, combined });
+          }
+        }
+
+        phase2Cands[k].sort((a, b) => b.combined - a.combined);
+        if (phase2Cands[k].length > TOP_K) phase2Cands[k].length = TOP_K;
+
+        if ((k + 1) % 100 === 0 || k === unmatched1.length - 1) {
+          post({
+            type:  'progress',
+            done:  k + 1,
+            total: unmatched1.length,
+            phase: 'Fase 2: Matches por descrição…',
+          });
+        }
+      }
+
+      // Atribuição greedy Fase 2 — candidato de maior score (sem duplicatas)
+      const order2 = Array.from({ length: unmatched1.length }, (_, k) => k)
+        .sort((a, b) => (phase2Cands[b][0]?.combined ?? 0) - (phase2Cands[a][0]?.combined ?? 0));
+
+      for (const k of order2) {
+        const p2Idx = unmatched1[k];
+        for (const cand of phase2Cands[k]) {
+          if (!usedIds.has(cand.id)) {
+            usedIds.add(cand.id);
+            assignment.set(p2Idx, { barcode: poolMap.get(cand.id)!.barcode, score: cand.combined, phase: 2 });
+            break;
+          }
+        }
+      }
+    }
+
+    // ── Montar resultado na ordem original ────────────────────────────────────
     const entries: MatchEntry[] = p2Items.map((_, i) => {
-      const a = assignment.get(i)!;
-      return { rowIdx: i, barcode: a.barcode, found: a.barcode !== '', score: a.score };
+      const a = assignment.get(i);
+      return a
+        ? { rowIdx: i, barcode: a.barcode, found: true,  score: a.score, phase: a.phase }
+        : { rowIdx: i, barcode: '',         found: false, score: 0,       phase: 1 as const };
     });
 
     post({ type: 'done', entries });
