@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,12 +28,14 @@ import {
     Link2,
     FileSpreadsheet,
     Upload,
+    Loader2,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { SpreadsheetRow } from '@/lib/converter-types';
 import type { SheetType } from '@/lib/erp-fields';
-import { getFieldsForType, autoSuggestMapping } from '@/lib/erp-fields';
+import { getFieldsForType, autoSuggestMapping, suggestHeaderName } from '@/lib/erp-fields';
 import { applySpecialCharsClean, categorizeSpecialCharsInString, isCodeRelatedField } from '@/lib/preview-alterations';
+import { Progress } from '@/components/ui/progress';
 
 interface StepDataEditorProps {
     headers: string[];
@@ -40,6 +43,41 @@ interface StepDataEditorProps {
     onRowsChange: (rows: SpreadsheetRow[]) => void;
     onHeadersChange?: (headers: string[]) => void;
     sheetType?: SheetType;
+}
+
+// ─── Helpers de normalização (fora do componente — nunca recriados) ──────────
+// RegExps pré-compiladas: evitam re-parsing do padrão a cada chamada
+const _RX_ACC = /[\u0300-\u036f]/g;
+const _RX_DCMM = /(\d),(\d)/g;          // vírgula decimal: "1,5" → "15"
+const _RX_DDOT = /(\d)\.(\d)/g;         // ponto decimal: "1.5" → "15" (antes da remoção de pontuação)
+const _RX_PUNC = /[-./\\,;:'()"*!@#$%^&+|]/g;
+const _RX_NUMU = /(\d+)\s*(un|und|unid|pcs?|pct|pkg|cx|kgs?|g|mg|mls?|gr|l|lt|lts|metros?|m|mt|mts|cm|mm|ea)\b/g;
+const _RX_UNIT = /\b(un|und|unid|pcs?|pct|pkg|cx|kgs?|g|mg|mls?|gr|l|lt|lts|metros?|m|mt|mts|par|jg|jogo|cj|conj|rolo|rl|bd|sc|ea|cm|mm)\b/g;
+const _RX_SPC = /\s{2,}/g;
+
+/**
+ * Normaliza em passagem única:
+ * lowercase → sem acento → decimal compactado → sem pontuação → sem unidades
+ * Ex: "ABRACADEIRA-NYLON 4,8X250MM UN" → "abracadeira nylon 48x250"
+ */
+function prepKey(raw: string): string {
+    let r = raw.trim().toLowerCase().normalize('NFD').replace(_RX_ACC, '');
+    r = r.replace(_RX_DCMM, '$1$2');  // "1,5" → "15"
+    r = r.replace(_RX_DDOT, '$1$2');  // "4.8" → "48" — ANTES de remover pontuação
+    r = r.replace(_RX_PUNC, ' ');     // pontuação restante → espaço
+    r = r.replace(_RX_NUMU, '$1');    // "500g" → "500", "2 m" → "2"
+    r = r.replace(_RX_UNIT, ' ');     // unidades soltas → espaço
+    return r.replace(_RX_SPC, ' ').trim();
+}
+
+/** Tokens em ordem alfabética — captura "DOVE SABONETE" e "SABONETE DOVE" como iguais */
+function sortedKey(deep: string): string {
+    return deep.split(' ').sort().join(' ');
+}
+
+function lookupMaps(key: string, ...maps: Map<string, string>[]): string | null {
+    for (const m of maps) { if (m.has(key)) return m.get(key)!; }
+    return null;
 }
 
 function toExcelCol(index: number): string {
@@ -92,7 +130,31 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
     const [crossRefLookupCol, setCrossRefLookupCol] = useState('');
     const [crossRefValueCol, setCrossRefValueCol] = useState('');
     const [crossRefNewColName, setCrossRefNewColName] = useState('');
+    const [crossRefValidationBCol, setCrossRefValidationBCol] = useState(''); // coluna na planilha B para validar jaccard
+    const [crossRefValidationACol, setCrossRefValidationACol] = useState(''); // coluna correspondente na planilha A
     const crossRefInputRef = useRef<HTMLInputElement>(null);
+
+    // --- Log de cruzamento ---
+    const [crossRefLog, setCrossRefLog] = useState<Array<{
+        rowIndex: number;
+        sourceValue: string;
+        matchType: 'exact' | 'strip' | 'punct' | 'sorted' | 'jaccard' | 'none' | 'new_row';
+        matchedKey: string;
+        insertedValue: string;
+    }>>([]);
+    const [isCrossRefLogOpen, setIsCrossRefLogOpen] = useState(false);
+    const [crossRefLogSearch, setCrossRefLogSearch] = useState('');
+    const [crossRefCreateMissing, setCrossRefCreateMissing] = useState(false);
+
+    // Estados de processamento do cruzamento (progresso e log ao vivo)
+    const [crossRefIsProcessing, setCrossRefIsProcessing] = useState(false);
+    const [crossRefProgress, setCrossRefProgress] = useState(0);
+    const [crossRefLiveStats, setCrossRefLiveStats] = useState({ exact: 0, sorted: 0, jaccard: 0, none: 0, processed: 0, total: 0 });
+    const [crossRefLiveLog, setCrossRefLiveLog] = useState<Array<{
+        source: string;
+        matchedKey: string;
+        type: 'exact' | 'sorted' | 'jaccard' | 'none';
+    }>>([]);
 
     const systemFields = useMemo(() =>
         sheetType ? getFieldsForType(sheetType).map(f => f.name) : [],
@@ -612,15 +674,6 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
 
     // --- Cruzamento de planilhas ---
 
-    // Normaliza texto para comparação: minúsculas, sem acento, sem espaços duplos, "4 kg"→"4kg"
-    const normalizeForCrossRef = (txt: string): string => {
-        let r = txt.trim().toLowerCase();
-        r = r.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        r = r.replace(/(\d+[.,]?\d*)\s+(lts|lt|pct|pkg|cx|un|kg|mg|ml|gr|g|l)\b/g, '$1$2');
-        r = r.replace(/\s{2,}/g, ' ').trim();
-        return r;
-    };
-
     const handleCrossRefFileLoad = (file: File) => {
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -646,6 +699,8 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
             setCrossRefLookupCol('');
             setCrossRefValueCol('');
             setCrossRefNewColName('');
+            setCrossRefValidationBCol('');
+            setCrossRefValidationACol('');
         };
         reader.readAsArrayBuffer(file);
     };
@@ -656,43 +711,371 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
         crossRefLookupCol !== '' &&
         crossRefValueCol !== '';
 
-    const handleApplyCrossRef = () => {
+    const handleApplyCrossRef = async () => {
         const sourceColIdx = parseInt(crossRefSourceCol);
         const lookupColIdx = parseInt(crossRefLookupCol);
         const valueColIdx = parseInt(crossRefValueCol);
         if (sourceColIdx === -1 || lookupColIdx === -1 || valueColIdx === -1) return;
 
-        const newColName = crossRefNewColName.trim() || crossRefHeaders[valueColIdx] || `Coluna ${toExcelCol(valueColIdx)}`;
+        // Colunas de validação extra (opcionais) — usadas para confirmar matches jaccard
+        const validationBColIdx = (crossRefValidationBCol !== '' && crossRefValidationBCol !== '__none__') ? parseInt(crossRefValidationBCol) : -1;
+        const validationAColIdx = (crossRefValidationACol !== '' && crossRefValidationACol !== '__none__') ? parseInt(crossRefValidationACol) : -1;
 
-        // Montar mapa normalizado; detectar duplicatas
-        const map = new Map<string, string>();
-        for (const row of crossRefRows) {
-            const key = normalizeForCrossRef(String(row[lookupColIdx] ?? ''));
-            if (!key) continue;
-            const val = String(row[valueColIdx] ?? '');
-            if (map.has(key)) {
-                map.set(key, 'DUPLICADO');
-            } else {
-                map.set(key, val);
+        const rawColName = crossRefNewColName.trim() || crossRefHeaders[valueColIdx] || `Coluna ${toExcelCol(valueColIdx)}`;
+        const erpFieldName = sheetType ? suggestHeaderName(rawColName, sheetType) : null;
+        const newColName = erpFieldName || rawColName;
+
+        // ─── Construção dos mapas ─────────────────────────────────────────────
+        const addToMap = (map: Map<string, string>, key: string, val: string) => {
+            if (!key) return;
+            if (map.has(key) && map.get(key) !== val) map.set(key, 'DUPLICADO');
+            else if (!map.has(key)) map.set(key, val);
+        };
+
+        const exactMap = new Map<string, string>();
+        const sortedMap = new Map<string, string>();
+        const bKeyToRowIdx = new Map<string, number>();
+
+        for (let bi = 0; bi < crossRefRows.length; bi++) {
+            const bRow = crossRefRows[bi];
+            const deep = prepKey(String(bRow[lookupColIdx] ?? ''));
+            if (!deep) continue;
+            const val = String(bRow[valueColIdx] ?? '');
+            addToMap(exactMap, deep, val);
+            const sk = sortedKey(deep);
+            if (sk !== deep) addToMap(sortedMap, sk, val);
+            if (!bKeyToRowIdx.has(deep)) bKeyToRowIdx.set(deep, bi);
+            if (sk !== deep && !bKeyToRowIdx.has(sk)) bKeyToRowIdx.set(sk, bi);
+        }
+
+        const allDeepKeys = Array.from(exactMap.keys());
+
+        // ─── Índice invertido: token → Set<chave B> ───────────────────────────
+        // Permite encontrar candidatos em O(tokens × hits_médios) em vez de O(N_total)
+        const tokenToKeys = new Map<string, Set<string>>();
+        const keyToks = new Map<string, string[]>(); // tokens pré-calculados por chave
+        for (const k of allDeepKeys) {
+            const toks = k.split(' ').filter(t => t.length >= 3);
+            keyToks.set(k, toks);
+            for (const tok of toks) {
+                if (!tokenToKeys.has(tok)) tokenToKeys.set(tok, new Set());
+                tokenToKeys.get(tok)!.add(k);
+            }
+        }
+        // Lista ordenada de tokens para busca de prefixo via busca binária O(log N)
+        // Captura truncamentos: fonte "intens" → encontra chave com "intensa"
+        const idxToksSorted = [...tokenToKeys.keys()].sort();
+        const prefixLookup = (prefix: string): string[] => {
+            let lo = 0, hi = idxToksSorted.length;
+            while (lo < hi) { const mid = (lo + hi) >>> 1; if (idxToksSorted[mid] < prefix) lo = mid + 1; else hi = mid; }
+            const out: string[] = [];
+            while (lo < idxToksSorted.length && idxToksSorted[lo].startsWith(prefix)) {
+                tokenToKeys.get(idxToksSorted[lo++])!.forEach(k => out.push(k));
+            }
+            return out;
+        };
+
+        // Cache de normalização: evita recalcular prepKey para descrições repetidas
+        const prepCache = new Map<string, string>();
+        const prep = (raw: string): string => {
+            const c = prepCache.get(raw);
+            if (c !== undefined) return c;
+            const r = prepKey(raw);
+            prepCache.set(raw, r);
+            return r;
+        };
+
+        // Cache de match fuzzy: mesmo produto normalizado → mesmo resultado
+        const matchCache = new Map<string, string | null>();
+        const fuzzyMatch = (sourceDeep: string): string | null => {
+            const c = matchCache.get(sourceDeep);
+            if (c !== undefined) return c;
+
+            const srcToks = sourceDeep.split(' ').filter(t => t.length >= 3);
+            if (srcToks.length === 0) { matchCache.set(sourceDeep, null); return null; }
+
+            // Coleta candidatos via índice invertido (token exato + prefixo)
+            const cScore = new Map<string, number>();
+            for (const tok of srcToks) {
+                tokenToKeys.get(tok)?.forEach(k => cScore.set(k, (cScore.get(k) ?? 0) + 10));
+                if (tok.length >= 4) {
+                    for (const k of prefixLookup(tok)) {
+                        if (!cScore.has(k)) cScore.set(k, 3);
+                    }
+                }
+            }
+
+            if (cScore.size === 0) { matchCache.set(sourceDeep, null); return null; }
+
+            // Jaccard com match de prefixo entre tokens fonte e candidato
+            let bestKey = '', bestJ = 0;
+            for (const candidate of cScore.keys()) {
+                const cToks = keyToks.get(candidate)!;
+                let inter = 0;
+                outer: for (const st of srcToks) {
+                    for (const ct of cToks) {
+                        if (st === ct ||
+                            (st.length >= 4 && ct.length >= 4 &&
+                                (ct.startsWith(st) || st.startsWith(ct)))) {
+                            inter++; continue outer;
+                        }
+                    }
+                }
+                const union = srcToks.length + cToks.length - inter;
+                const j = union === 0 ? 0 : inter / union;
+                if (j > bestJ) { bestJ = j; bestKey = candidate; }
+            }
+
+            const result = bestJ >= 0.45 ? bestKey : null;
+            matchCache.set(sourceDeep, result);
+            return result;
+        };
+
+        // ─── Fechar o diálogo e mostrar overlay de progresso ─────────────────
+        setIsCrossRefOpen(false);
+        await new Promise(r => setTimeout(r, 180));
+        flushSync(() => {
+            setCrossRefIsProcessing(true);
+            setCrossRefProgress(0);
+            setCrossRefLiveStats({ exact: 0, sorted: 0, jaccard: 0, none: 0, processed: 0, total: localRows.length });
+            setCrossRefLiveLog([]);
+        });
+
+        // ─── Processamento em chunks (rAF + flushSync) ───────────────────────
+        const CHUNK = 500;
+        const stats = { exact: 0, sorted: 0, jaccard: 0, none: 0 };
+        const processedRows: (typeof localRows[number])[] = [];
+        const matchedBRows = new Set<number>();
+        const logEntries: typeof crossRefLog = [];
+        const liveRing: { source: string; matchedKey: string; type: 'exact' | 'sorted' | 'jaccard' | 'none' }[] = [];
+        const pushLive = (e: typeof liveRing[0]) => { liveRing.push(e); if (liveRing.length > 40) liveRing.shift(); };
+
+        const snapshot = localRows;
+        let i = 0;
+
+        await new Promise<void>(resolve => {
+            const tick = () => {
+                const end = Math.min(i + CHUNK, snapshot.length);
+                for (; i < end; i++) {
+                    const row = snapshot[i];
+                    const sourceOrig = String(row[sourceColIdx] ?? '');
+                    const sourceDeep = prep(sourceOrig);
+
+                    // slice() + push é mais rápido que spread para arrays com muitas colunas
+                    const appendRow = (val: string) => {
+                        const out = row.slice() as typeof row;
+                        out.push(val);
+                        processedRows.push(out);
+                    };
+
+                    if (!sourceDeep) {
+                        stats.none++;
+                        appendRow('');
+                        logEntries.push({ rowIndex: i, sourceValue: sourceOrig, matchType: 'none', matchedKey: '', insertedValue: '' });
+                        pushLive({ source: sourceOrig, matchedKey: '', type: 'none' });
+                        continue;
+                    }
+
+                    const sourceSk = sortedKey(sourceDeep);
+
+                    const doMatch = (val: string, key: string, type: 'exact' | 'sorted' | 'jaccard') => {
+                        const bIdx = bKeyToRowIdx.get(key) ?? bKeyToRowIdx.get(sourceDeep);
+                        if (bIdx !== undefined) matchedBRows.add(bIdx);
+                        stats[type]++;
+                        appendRow(val);
+                        logEntries.push({ rowIndex: i, sourceValue: sourceOrig, matchType: type, matchedKey: key, insertedValue: val });
+                        pushLive({ source: sourceOrig, matchedKey: key, type });
+                    };
+
+                    const v1 = lookupMaps(sourceDeep, exactMap);
+                    if (v1 !== null) { doMatch(v1, sourceDeep, 'exact'); continue; }
+
+                    const v2 = lookupMaps(sourceSk, exactMap, sortedMap);
+                    if (v2 !== null) { doMatch(v2, sourceSk, 'sorted'); continue; }
+
+                    const bestKey = fuzzyMatch(sourceDeep);
+                    if (bestKey) {
+                        // Validação por coluna extra (opcional)
+                        if (validationBColIdx !== -1 && validationAColIdx !== -1) {
+                            const bRowIdx = bKeyToRowIdx.get(bestKey);
+                            if (bRowIdx !== undefined) {
+                                const bVal = prepKey(String(crossRefRows[bRowIdx][validationBColIdx] ?? ''));
+                                const aVal = prepKey(String(row[validationAColIdx] ?? ''));
+                                if (bVal && aVal && bVal !== aVal) {
+                                    // Falhou validação extra → sem match
+                                    stats.none++;
+                                    appendRow('');
+                                    logEntries.push({ rowIndex: i, sourceValue: sourceOrig, matchType: 'none', matchedKey: '', insertedValue: '' });
+                                    pushLive({ source: sourceOrig, matchedKey: '', type: 'none' });
+                                    continue;
+                                }
+                            }
+                        }
+                        doMatch(exactMap.get(bestKey)!, bestKey, 'jaccard');
+                        continue;
+                    }
+
+                    stats.none++;
+                    appendRow('');
+                    logEntries.push({ rowIndex: i, sourceValue: sourceOrig, matchType: 'none', matchedKey: '', insertedValue: '' });
+                    pushLive({ source: sourceOrig, matchedKey: '', type: 'none' });
+                }
+
+                const pct = Math.round((i / snapshot.length) * 100);
+                flushSync(() => {
+                    setCrossRefProgress(pct);
+                    setCrossRefLiveStats({ ...stats, processed: i, total: snapshot.length });
+                    setCrossRefLiveLog([...liveRing]);
+                });
+
+                if (i < snapshot.length) {
+                    requestAnimationFrame(tick);
+                } else {
+                    resolve();
+                }
+            };
+            requestAnimationFrame(tick);
+        });
+
+        // ─── Criar linhas para produtos da planilha B não encontrados em A ────
+        let countNewRow = 0;
+        if (crossRefCreateMissing) {
+            const normH = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const bCstIdx = crossRefHeaders.findIndex(h => normH(h).includes('cst'));
+            const bNcmIdx = crossRefHeaders.findIndex(h => normH(h).includes('ncm'));
+            const aCstIdx = localHeaders.findIndex(h => normH(h).includes('cst'));
+            const aNcmIdx = localHeaders.findIndex(h => normH(h).includes('ncm'));
+            const newColIdx = localHeaders.length;
+
+            for (let bi = 0; bi < crossRefRows.length; bi++) {
+                if (matchedBRows.has(bi)) continue;
+                const bRow = crossRefRows[bi];
+                const desc = String(bRow[lookupColIdx] ?? '').trim();
+                const barcode = String(bRow[valueColIdx] ?? '').trim();
+                if (!desc && !barcode) continue;
+
+                const newRow: (string | number | boolean | Date | null | undefined)[] =
+                    new Array(localHeaders.length + 1).fill('');
+                newRow[sourceColIdx] = desc;
+                newRow[newColIdx] = barcode;
+                if (aCstIdx !== -1 && bCstIdx !== -1) newRow[aCstIdx] = String(bRow[bCstIdx] ?? '');
+                if (aNcmIdx !== -1 && bNcmIdx !== -1) newRow[aNcmIdx] = String(bRow[bNcmIdx] ?? '');
+
+                processedRows.push(newRow);
+                countNewRow++;
+                logEntries.push({
+                    rowIndex: processedRows.length - 1,
+                    sourceValue: desc,
+                    matchType: 'new_row',
+                    matchedKey: '',
+                    insertedValue: barcode,
+                });
             }
         }
 
-        // Adicionar nova coluna em cada linha
-        const newRows = localRows.map(row => {
-            const sourceVal = normalizeForCrossRef(String(row[sourceColIdx] ?? ''));
-            const result = sourceVal ? (map.get(sourceVal) ?? '') : '';
-            return [...row, result];
-        });
+        console.log(`[CrossRef] exato: ${stats.exact} | sorted: ${stats.sorted} | fuzzy: ${stats.jaccard} | sem match: ${stats.none} | novos: ${countNewRow} | prepCache: ${prepCache.size} | matchCache: ${matchCache.size}`);
 
-        setLocalRows(newRows);
+        setLocalRows(processedRows);
         setLocalHeaders([...localHeaders, newColName]);
         setOriginalHeaders([...originalHeaders, newColName]);
         setHasChanges(true);
-        setIsCrossRefOpen(false);
+        setCrossRefLog(logEntries);
+        setCrossRefLogSearch('');
+        setCrossRefIsProcessing(false);
+        setTimeout(() => setIsCrossRefLogOpen(true), 150);
     };
 
     return (
         <>
+            {/* ─── Modal de progresso do cruzamento ─────────────────────────────── */}
+            <Dialog open={crossRefIsProcessing} onOpenChange={() => { /* bloqueado durante processamento */ }}>
+                <DialogContent
+                    className="max-w-lg"
+                    onPointerDownOutside={e => e.preventDefault()}
+                    onEscapeKeyDown={e => e.preventDefault()}
+                >
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                            Processando cruzamento...
+                        </DialogTitle>
+                        <DialogDescription>
+                            {crossRefLiveStats.processed} de {crossRefLiveStats.total} linhas processadas
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4">
+                        {/* Barra de progresso */}
+                        <div className="space-y-1.5">
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>{crossRefProgress}%</span>
+                                <span>{crossRefLiveStats.processed}/{crossRefLiveStats.total}</span>
+                            </div>
+                            <Progress value={crossRefProgress} className="h-2" />
+                        </div>
+
+                        {/* Cards de estatísticas ao vivo */}
+                        <div className="grid grid-cols-4 gap-2">
+                            <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-center">
+                                <p className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase">Exato</p>
+                                <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300">{crossRefLiveStats.exact}</p>
+                            </div>
+                            <div className="p-2 rounded-lg bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 text-center">
+                                <p className="text-[10px] font-semibold text-teal-600 dark:text-teal-400 uppercase">Ordem</p>
+                                <p className="text-lg font-bold text-teal-700 dark:text-teal-300">{crossRefLiveStats.sorted}</p>
+                            </div>
+                            <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-center">
+                                <p className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 uppercase">Fuzzy</p>
+                                <p className="text-lg font-bold text-amber-700 dark:text-amber-300">{crossRefLiveStats.jaccard}</p>
+                            </div>
+                            <div className="p-2 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-center">
+                                <p className="text-[10px] font-semibold text-red-600 dark:text-red-400 uppercase">Sem match</p>
+                                <p className="text-lg font-bold text-red-700 dark:text-red-300">{crossRefLiveStats.none}</p>
+                            </div>
+                        </div>
+
+                        {/* Log ao vivo — últimas 40 entradas */}
+                        <div className="space-y-1">
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Log ao vivo</p>
+                            <ScrollArea className="h-44 rounded-md border bg-muted/20 p-2">
+                                <div className="space-y-0.5">
+                                    {[...crossRefLiveLog].reverse().map((e, idx) => (
+                                        <div key={idx} className="flex items-center gap-1.5 text-[11px] font-mono">
+                                            {e.type === 'exact' && (
+                                                <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                            )}
+                                            {e.type === 'sorted' && (
+                                                <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-teal-500" />
+                                            )}
+                                            {e.type === 'jaccard' && (
+                                                <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                            )}
+                                            {e.type === 'none' && (
+                                                <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-red-400" />
+                                            )}
+                                            <span className="truncate text-foreground/80 max-w-[180px]" title={e.source}>
+                                                {e.source || '—'}
+                                            </span>
+                                            {e.type !== 'none' && (
+                                                <>
+                                                    <span className="text-muted-foreground shrink-0">→</span>
+                                                    <span className="truncate text-muted-foreground max-w-[180px]" title={e.matchedKey}>
+                                                        {e.matchedKey}
+                                                    </span>
+                                                </>
+                                            )}
+                                            {e.type === 'none' && (
+                                                <span className="text-red-400/70 italic">sem correspondência</span>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </ScrollArea>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
             <div className="space-y-6">
                 {/* Informações da Planilha */}
                 <Card className="bg-card p-6">
@@ -1285,7 +1668,9 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
                                                     </label>
                                                     <Select value={crossRefValueCol} onValueChange={(v) => {
                                                         setCrossRefValueCol(v);
-                                                        if (!crossRefNewColName) setCrossRefNewColName(crossRefHeaders[parseInt(v)] || `Coluna ${toExcelCol(parseInt(v))}`);
+                                                        const rawName = crossRefHeaders[parseInt(v)] || `Coluna ${toExcelCol(parseInt(v))}`;
+                                                        const erpSuggestion = sheetType ? suggestHeaderName(rawName, sheetType) : null;
+                                                        setCrossRefNewColName(erpSuggestion || rawName);
                                                     }}>
                                                         <SelectTrigger className="h-9 text-sm">
                                                             <SelectValue placeholder="Selecione a coluna de valor..." />
@@ -1314,6 +1699,62 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
                                                         Sem correspondência = célula em branco.
                                                         Descrições duplicadas na base = <span className="font-mono font-semibold">DUPLICADO</span>.
                                                     </p>
+                                                </div>
+
+                                                <label className="flex items-start gap-3 p-3 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors">
+                                                    <Checkbox
+                                                        checked={crossRefCreateMissing}
+                                                        onCheckedChange={(v) => setCrossRefCreateMissing(!!v)}
+                                                        className="mt-0.5"
+                                                    />
+                                                    <div>
+                                                        <p className="text-xs font-semibold text-emerald-900 dark:text-emerald-100">
+                                                            Criar linhas para produtos não encontrados
+                                                        </p>
+                                                        <p className="text-[10px] text-emerald-700 dark:text-emerald-400 mt-0.5">
+                                                            Produtos da planilha base que não existem nesta planilha serão adicionados como novas linhas (com descrição, código de barras, CST e NCM se disponíveis).
+                                                        </p>
+                                                    </div>
+                                                </label>
+
+                                                {/* Validação extra para match fuzzy */}
+                                                <div className="p-3 rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 space-y-3">
+                                                    <p className="text-xs font-semibold text-violet-900 dark:text-violet-100">
+                                                        Validação extra para matches fuzzy <span className="font-normal text-violet-600 dark:text-violet-400">(opcional)</span>
+                                                    </p>
+                                                    <p className="text-[10px] text-violet-700 dark:text-violet-400">
+                                                        Quando a descrição não casa exatamente, confirma o match comparando outra coluna (ex: estoque, preço, NCM). Se os valores diferirem, rejeita o match.
+                                                    </p>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div className="space-y-1">
+                                                            <label className="text-[10px] font-medium text-violet-800 dark:text-violet-300">Coluna nesta planilha</label>
+                                                            <Select value={crossRefValidationACol} onValueChange={setCrossRefValidationACol}>
+                                                                <SelectTrigger className="h-8 text-xs">
+                                                                    <SelectValue placeholder="Nenhuma" />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    <SelectItem value="__none__">Nenhuma</SelectItem>
+                                                                    {localHeaders.map((h, i) => (
+                                                                        <SelectItem key={i} value={String(i)}>{h || `Coluna ${toExcelCol(i)}`}</SelectItem>
+                                                                    ))}
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <label className="text-[10px] font-medium text-violet-800 dark:text-violet-300">Coluna na 2ª planilha</label>
+                                                            <Select value={crossRefValidationBCol} onValueChange={setCrossRefValidationBCol}>
+                                                                <SelectTrigger className="h-8 text-xs">
+                                                                    <SelectValue placeholder="Nenhuma" />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    <SelectItem value="__none__">Nenhuma</SelectItem>
+                                                                    {crossRefHeaders.map((h, i) => (
+                                                                        <SelectItem key={i} value={String(i)}>{h || `Coluna ${toExcelCol(i)}`}</SelectItem>
+                                                                    ))}
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </>
@@ -2146,7 +2587,172 @@ export function StepDataEditor({ headers, rows, onRowsChange, onHeadersChange, s
                         </div>
                     </DialogContent>
                 </Dialog>
+
+                {/* Modal de Log do Cruzamento de Planilhas */}
+                {(() => {
+                    const logSearch = crossRefLogSearch.toLowerCase().trim();
+                    const filteredLog = crossRefLog.filter(entry =>
+                        !logSearch ||
+                        entry.sourceValue.toLowerCase().includes(logSearch) ||
+                        entry.matchedKey.toLowerCase().includes(logSearch) ||
+                        entry.insertedValue.toLowerCase().includes(logSearch)
+                    );
+                    const countByType = {
+                        exact: crossRefLog.filter(e => e.matchType === 'exact').length,
+                        sorted: crossRefLog.filter(e => e.matchType === 'sorted').length,
+                        jaccard: crossRefLog.filter(e => e.matchType === 'jaccard').length,
+                        none: crossRefLog.filter(e => e.matchType === 'none').length,
+                        new_row: crossRefLog.filter(e => e.matchType === 'new_row').length,
+                    };
+                    const totalMatched = crossRefLog.length - countByType.none;
+                    return (
+                        <Dialog open={isCrossRefLogOpen} onOpenChange={setIsCrossRefLogOpen}>
+                            <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0 gap-0">
+                                <DialogHeader className="px-6 pt-6 pb-3 border-b shrink-0 text-left">
+                                    <DialogTitle className="flex items-center gap-2">
+                                        <Link2 className="w-5 h-5 text-blue-500" />
+                                        Log do Cruzamento
+                                    </DialogTitle>
+                                    <DialogDescription>
+                                        Resultado detalhado de cada linha comparada e valor inserido.
+                                    </DialogDescription>
+                                </DialogHeader>
+
+                                {/* Resumo */}
+                                <div className="px-6 py-3 border-b shrink-0 space-y-3">
+                                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                                        <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-center">
+                                            <p className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase">Exato</p>
+                                            <p className="text-xl font-bold text-emerald-700 dark:text-emerald-300">{countByType.exact}</p>
+                                        </div>
+                                        <div className="p-2 rounded-lg bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 text-center">
+                                            <p className="text-[10px] font-semibold text-teal-600 dark:text-teal-400 uppercase">Ord. tokens</p>
+                                            <p className="text-xl font-bold text-teal-700 dark:text-teal-300">{countByType.sorted}</p>
+                                        </div>
+                                        <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-center">
+                                            <p className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 uppercase">Jaccard</p>
+                                            <p className="text-xl font-bold text-amber-700 dark:text-amber-300">{countByType.jaccard}</p>
+                                        </div>
+                                        <div className="p-2 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-center">
+                                            <p className="text-[10px] font-semibold text-red-600 dark:text-red-400 uppercase">Sem match</p>
+                                            <p className="text-xl font-bold text-red-700 dark:text-red-300">{countByType.none}</p>
+                                        </div>
+                                        <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-center">
+                                            <p className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 uppercase">Novos</p>
+                                            <p className="text-xl font-bold text-blue-700 dark:text-blue-300">{countByType.new_row}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="text-sm text-muted-foreground">
+                                            <span className="font-bold text-foreground">{totalMatched}</span> de <span className="font-bold text-foreground">{crossRefLog.length}</span> linhas com código inserido
+                                        </div>
+                                        <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden">
+                                            <div
+                                                className="h-full bg-emerald-500 rounded-full transition-all"
+                                                style={{ width: crossRefLog.length ? `${(totalMatched / crossRefLog.length) * 100}%` : '0%' }}
+                                            />
+                                        </div>
+                                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                                            {crossRefLog.length ? Math.round((totalMatched / crossRefLog.length) * 100) : 0}%
+                                        </span>
+                                    </div>
+
+                                    {/* Barra de pesquisa */}
+                                    <div className="relative">
+                                        <Input
+                                            placeholder="Pesquisar por produto, chave encontrada ou código de barras..."
+                                            value={crossRefLogSearch}
+                                            onChange={e => setCrossRefLogSearch(e.target.value)}
+                                            className="h-9 text-sm pl-8"
+                                        />
+                                        <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                        </svg>
+                                        {crossRefLogSearch && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setCrossRefLogSearch('')}
+                                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                    </div>
+                                    {crossRefLogSearch && (
+                                        <p className="text-xs text-muted-foreground">
+                                            {filteredLog.length} resultado{filteredLog.length !== 1 ? 's' : ''} para &quot;{crossRefLogSearch}&quot;
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* Tabela de log */}
+                                <div className="flex-1 overflow-auto px-6 py-3">
+                                    <table className="w-full text-sm border-collapse">
+                                        <thead className="bg-muted sticky top-0 z-10">
+                                            <tr>
+                                                <th className="text-left text-xs font-semibold px-3 py-2 w-16 border-b">#</th>
+                                                <th className="text-left text-xs font-semibold px-3 py-2 border-b">Valor na planilha A</th>
+                                                <th className="text-left text-xs font-semibold px-3 py-2 w-28 border-b">Tipo match</th>
+                                                <th className="text-left text-xs font-semibold px-3 py-2 border-b">Chave encontrada na B</th>
+                                                <th className="text-left text-xs font-semibold px-3 py-2 border-b">Código inserido</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {filteredLog.map((entry, idx) => (
+                                                <tr
+                                                    key={idx}
+                                                    className={`border-b transition-colors ${entry.matchType === 'none'
+                                                        ? 'bg-red-50/50 dark:bg-red-950/20'
+                                                        : idx % 2 === 0 ? 'bg-background' : 'bg-muted/20'
+                                                        }`}
+                                                >
+                                                    <td className="px-3 py-1.5 text-xs text-muted-foreground font-mono">{entry.rowIndex + 1}</td>
+                                                    <td className="px-3 py-1.5 text-xs text-foreground max-w-[260px] truncate" title={entry.sourceValue}>
+                                                        {entry.sourceValue || <span className="text-muted-foreground italic">(vazio)</span>}
+                                                    </td>
+                                                    <td className="px-3 py-1.5">
+                                                        {entry.matchType === 'exact' && (
+                                                            <Badge className="text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-400">exato</Badge>
+                                                        )}
+                                                        {entry.matchType === 'sorted' && (
+                                                            <Badge className="text-[10px] bg-teal-500/20 text-teal-700 dark:text-teal-300 border border-teal-400">ord. tokens</Badge>
+                                                        )}
+                                                        {entry.matchType === 'jaccard' && (
+                                                            <Badge className="text-[10px] bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-400">jaccard</Badge>
+                                                        )}
+                                                        {entry.matchType === 'none' && (
+                                                            <Badge className="text-[10px] bg-red-500/20 text-red-700 dark:text-red-300 border border-red-400">sem match</Badge>
+                                                        )}
+                                                        {entry.matchType === 'new_row' && (
+                                                            <Badge className="text-[10px] bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-400">linha nova</Badge>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-3 py-1.5 text-xs text-muted-foreground font-mono max-w-[260px] truncate" title={entry.matchedKey}>
+                                                        {entry.matchedKey || '—'}
+                                                    </td>
+                                                    <td className="px-3 py-1.5 text-xs font-mono font-semibold text-foreground">
+                                                        {entry.insertedValue || <span className="text-red-500">—</span>}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                    {filteredLog.length === 0 && (
+                                        <div className="py-10 text-center text-muted-foreground text-sm">
+                                            Nenhum resultado encontrado.
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="px-6 py-4 border-t shrink-0 flex justify-end">
+                                    <Button onClick={() => setIsCrossRefLogOpen(false)}>Fechar</Button>
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+                    );
+                })()}
             </div>
         </>
     );
-}
+}
+
