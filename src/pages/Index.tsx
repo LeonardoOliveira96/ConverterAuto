@@ -22,13 +22,15 @@ const AuditValidation = lazy(() => import('@/components/converter/AuditValidatio
 const ExtractorUnidades = lazy(() => import('@/components/converter/ExtractorUnidades').then(m => ({ default: m.ExtractorUnidades })));
 const SeparadorCodigoBarras = lazy(() => import('@/components/converter/SeparadorCodigoBarras').then(m => ({ default: m.SeparadorCodigoBarras })));
 const LimpadorEAN = lazy(() => import('@/components/converter/LimpadorEAN').then(m => ({ default: m.LimpadorEAN })));
+const FiltradorTamanhoEAN = lazy(() => import('@/components/converter/FiltradorTamanhoEAN').then(m => ({ default: m.FiltradorTamanhoEAN })));
+const ValidadorNCM = lazy(() => import('@/components/converter/ValidadorNCM').then(m => ({ default: m.ValidadorNCM })));
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { toast } from '@/components/ui/sonner';
-import { ArrowLeft, ArrowRight, History, FileSpreadsheet, Barcode, ShieldCheck, Scissors, ScanLine } from 'lucide-react';
+import { ArrowLeft, ArrowRight, History, FileSpreadsheet, Barcode, ShieldCheck, Scissors, ScanLine, Filter, ClipboardCheck } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
-type ToolMode = null | 'converter' | 'match' | 'audit' | 'units' | 'barsep' | 'cleaner';
+type ToolMode = null | 'converter' | 'match' | 'audit' | 'units' | 'barsep' | 'cleaner' | 'barfilter' | 'ncmvalidator';
 
 export default function Index() {
   const [toolMode, setToolMode] = useState<ToolMode>(null);
@@ -174,7 +176,7 @@ export default function Index() {
               <span className="text-muted-foreground text-sm">
                 /
                 <span className="ml-2 text-foreground font-medium">
-                  {toolMode === 'converter' ? 'Conversor ERP' : toolMode === 'match' ? 'Match Inteligente' : toolMode === 'audit' ? 'Auditoria de Exportação' : toolMode === 'units' ? 'Extrator de Unidades' : toolMode === 'barsep' ? 'Separador de Código de Barras' : 'Limpador EAN + Descrição'}
+                  {toolMode === 'converter' ? 'Conversor ERP' : toolMode === 'match' ? 'Match Inteligente' : toolMode === 'audit' ? 'Auditoria de Exportação' : toolMode === 'units' ? 'Extrator de Unidades' : toolMode === 'barsep' ? 'Separador de Código de Barras' : toolMode === 'cleaner' ? 'Limpador EAN + Descrição' : toolMode === 'barfilter' ? 'Filtrar por Tamanho do Código de Barras' : 'Validador de NCM'}
                 </span>
               </span>
             )}
@@ -352,6 +354,50 @@ export default function Index() {
                     </p>
                   </Card>
 
+                  {/* Card: Filtrar por Tamanho do Código de Barras */}
+                  <Card
+                    onClick={() => setToolMode('barfilter')}
+                    className="p-6 cursor-pointer transition-all duration-200 hover:shadow-lg hover:bg-secondary/50 group flex flex-col border-amber-200 dark:border-amber-800"
+                  >
+                    <div className="flex items-center gap-1.5 mb-4">
+                      <span className="text-xs">⚙️</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                        Ferramentas
+                      </span>
+                    </div>
+                    <div className="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-3 group-hover:bg-amber-600 group-hover:text-white transition-colors">
+                      <Filter className="w-6 h-6" />
+                    </div>
+                    <h3 className="font-heading font-semibold text-base text-foreground leading-snug">
+                      Filtrar por Tamanho do Código de Barras
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-1.5 flex-1">
+                      Remove registros cujo código de barras tenha menos dígitos que o código de referência informado
+                    </p>
+                  </Card>
+
+                  {/* Card: Validador de NCM */}
+                  <Card
+                    onClick={() => setToolMode('ncmvalidator')}
+                    className="p-6 cursor-pointer transition-all duration-200 hover:shadow-lg hover:bg-secondary/50 group flex flex-col border-sky-200 dark:border-sky-800"
+                  >
+                    <div className="flex items-center gap-1.5 mb-4">
+                      <span className="text-xs">⚙️</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                        Ferramentas
+                      </span>
+                    </div>
+                    <div className="w-12 h-12 rounded-xl bg-sky-100 dark:bg-sky-900/50 text-sky-600 dark:text-sky-400 flex items-center justify-center mb-3 group-hover:bg-sky-600 group-hover:text-white transition-colors">
+                      <ClipboardCheck className="w-6 h-6" />
+                    </div>
+                    <h3 className="font-heading font-semibold text-base text-foreground leading-snug">
+                      Validador de NCM
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-1.5 flex-1">
+                      Limpa NCMs inválidos (diferente de 8 dígitos numéricos) sem remover linhas da planilha
+                    </p>
+                  </Card>
+
                 </div>
               </motion.div>
             )}
@@ -482,6 +528,20 @@ export default function Index() {
             {toolMode === 'cleaner' && (
               <motion.div key="cleaner" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <LimpadorEAN onBack={() => setToolMode(null)} />
+              </motion.div>
+            )}
+
+            {/* ── Filtrar por Tamanho do Código de Barras ── */}
+            {toolMode === 'barfilter' && (
+              <motion.div key="barfilter" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <FiltradorTamanhoEAN onBack={() => setToolMode(null)} />
+              </motion.div>
+            )}
+
+            {/* ── Validador de NCM ── */}
+            {toolMode === 'ncmvalidator' && (
+              <motion.div key="ncmvalidator" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <ValidadorNCM onBack={() => setToolMode(null)} />
               </motion.div>
             )}
 
