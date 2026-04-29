@@ -39,9 +39,11 @@ type ColumnMapping = {
   p1Barcode: string;
   p1Estoque: string;
   p1ValorVenda: string;
+  p1Custo: string;
   p2Desc: string;
   p2Estoque: string;
   p2ValorVenda: string;
+  p2Custo: string;
 };
 
 type MatchLogEntry = {
@@ -50,6 +52,7 @@ type MatchLogEntry = {
   tipo: 'encontrado' | 'nao_encontrado';
   codigoBarras?: string;
   score?: number;
+  fase?: 1 | 2;
 };
 
 type MatchResult = {
@@ -296,6 +299,8 @@ function ResultView({ result, sheet2FileName, onDownload }: ResultViewProps) {
     : 0;
 
   const unmatchedEntries = result.log.filter((l) => l.tipo === 'nao_encontrado');
+  const phase1Count = result.log.filter((l) => l.tipo === 'encontrado' && l.fase === 1).length;
+  const phase2Count = result.log.filter((l) => l.tipo === 'encontrado' && l.fase === 2).length;
 
   return (
     <motion.div
@@ -328,6 +333,14 @@ function ResultView({ result, sheet2FileName, onDownload }: ResultViewProps) {
               className="h-full bg-green-500 rounded-full transition-all duration-700"
               style={{ width: `${pct}%` }}
             />
+          </div>
+          <div className="flex gap-2 mt-2">
+            <span className="text-[10px] bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded font-semibold">
+              F1—alta confiança: {phase1Count}
+            </span>
+            <span className="text-[10px] bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded font-semibold">
+              F2—descrição: {phase2Count}
+            </span>
           </div>
         </Card>
 
@@ -410,6 +423,13 @@ function ResultView({ result, sheet2FileName, onDownload }: ResultViewProps) {
                   <span className="text-foreground break-all flex-1">
                     {entry.descricao}
                   </span>
+                  <span className={`text-[9px] px-1 py-0.5 rounded font-bold shrink-0 ${
+                    entry.fase === 2
+                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
+                      : 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400'
+                  }`}>
+                    F{entry.fase ?? 1}
+                  </span>
                   <Badge variant="secondary" className="text-[10px] font-mono shrink-0">
                     {entry.codigoBarras}
                   </Badge>
@@ -475,9 +495,11 @@ const EMPTY_MAPPING: ColumnMapping = {
   p1Barcode: '',
   p1Estoque: '',
   p1ValorVenda: '',
+  p1Custo: '',
   p2Desc: '',
   p2Estoque: '',
   p2ValorVenda: '',
+  p2Custo: '',
 };
 
 export function MatchPlanilhas({ onBack }: MatchPlanilhasProps) {
@@ -527,6 +549,7 @@ export function MatchPlanilhas({ onBack }: MatchPlanilhasProps) {
     const p1DescIdx    = s1.headers.indexOf(map.p1Desc);
     const p1BarcodeIdx = s1.headers.indexOf(map.p1Barcode);
     const p1ValorIdx   = map.p1ValorVenda ? s1.headers.indexOf(map.p1ValorVenda) : -1;
+    const p1CustoIdx   = map.p1Custo      ? s1.headers.indexOf(map.p1Custo)      : -1;
     const p1EstoqueIdx = map.p1Estoque    ? s1.headers.indexOf(map.p1Estoque)    : -1;
 
     const pool: WorkerPoolItem[] = [];
@@ -540,12 +563,14 @@ export function MatchPlanilhas({ onBack }: MatchPlanilhasProps) {
         norm: desc,
         barcode,
         valor:   p1ValorIdx   >= 0 ? toNumber(r[p1ValorIdx])   : 0,
+        custo:   p1CustoIdx   >= 0 ? toNumber(r[p1CustoIdx])   : 0,
         estoque: p1EstoqueIdx >= 0 ? toNumber(r[p1EstoqueIdx]) : 0,
       });
     });
 
     const p2DescIdx    = s2.headers.indexOf(map.p2Desc);
     const p2ValorIdx   = map.p2ValorVenda ? s2.headers.indexOf(map.p2ValorVenda) : -1;
+    const p2CustoIdx   = map.p2Custo      ? s2.headers.indexOf(map.p2Custo)      : -1;
     const p2EstoqueIdx = map.p2Estoque    ? s2.headers.indexOf(map.p2Estoque)    : -1;
 
     const p2Items: WorkerP2Item[] = s2.rows.map((row, i) => {
@@ -555,15 +580,17 @@ export function MatchPlanilhas({ onBack }: MatchPlanilhasProps) {
         rawDesc:  String(r[p2DescIdx] ?? ''),
         normDesc: normalizeDesc(r[p2DescIdx]),
         valor:    p2ValorIdx   >= 0 ? toNumber(r[p2ValorIdx])   : 0,
+        custo:    p2CustoIdx   >= 0 ? toNumber(r[p2CustoIdx])   : 0,
         estoque:  p2EstoqueIdx >= 0 ? toNumber(r[p2EstoqueIdx]) : 0,
       };
     });
 
     const useValor   = p1ValorIdx   >= 0 && p2ValorIdx   >= 0 && map.p1ValorVenda !== '';
+    const useCusto   = p1CustoIdx   >= 0 && p2CustoIdx   >= 0 && map.p1Custo      !== '';
     const useEstoque = p1EstoqueIdx >= 0 && p2EstoqueIdx >= 0 && map.p1Estoque    !== '';
 
     console.log('[Match] Iniciando Web Worker — P1:', pool.length, 'itens | P2:', p2Items.length, 'itens');
-    console.log('[Match] useValor:', useValor, '| useEstoque:', useEstoque);
+    console.log('[Match] useValor:', useValor, '| useCusto:', useCusto, '| useEstoque:', useEstoque);
 
     setProcessing(true);
     setProgress({ done: 0, total: s2.rows.length, phase: 'Iniciando worker…' });
@@ -598,6 +625,7 @@ export function MatchPlanilhas({ onBack }: MatchPlanilhasProps) {
               tipo:          'encontrado',
               codigoBarras:  entry.barcode,
               score:         entry.score,
+              fase:          entry.phase,
             });
           } else {
             log.push({ linha: entry.rowIdx + 2, descricao: rawDesc, tipo: 'nao_encontrado' });
@@ -629,7 +657,7 @@ export function MatchPlanilhas({ onBack }: MatchPlanilhasProps) {
       workerRef.current = null;
     };
 
-    worker.postMessage({ pool, p2Items, useValor, useEstoque } satisfies WorkerInput);
+    worker.postMessage({ pool, p2Items, useValor, useCusto, useEstoque } satisfies WorkerInput);
   }
 
   const handleDownload = () => {
@@ -737,10 +765,11 @@ export function MatchPlanilhas({ onBack }: MatchPlanilhasProps) {
               title="Planilha 1 — com código de barras"
               headers={sheet1.headers}
               fields={[
-                { key: 'p1Desc', label: 'Descrição do produto', required: true },
-                { key: 'p1Barcode', label: 'Código de barras (EAN)', required: true },
-                { key: 'p1Estoque', label: 'Estoque (opcional)', required: false },
-                { key: 'p1ValorVenda', label: 'Valor de venda (opcional)', required: false },
+                { key: 'p1Desc',      label: 'Descrição do produto',         required: true  },
+                { key: 'p1Barcode',   label: 'Código de barras (EAN)',       required: true  },
+                { key: 'p1ValorVenda',label: 'Preço de venda (opcional)',    required: false },
+                { key: 'p1Custo',     label: 'Preço de custo (opcional)',    required: false },
+                { key: 'p1Estoque',   label: 'Estoque (opcional)',            required: false },
               ]}
               values={mapping}
               onFieldChange={handleFieldChange}
@@ -749,9 +778,10 @@ export function MatchPlanilhas({ onBack }: MatchPlanilhasProps) {
               title="Planilha 2 — sem código de barras"
               headers={sheet2.headers}
               fields={[
-                { key: 'p2Desc', label: 'Descrição do produto', required: true },
-                { key: 'p2Estoque', label: 'Estoque (opcional)', required: false },
-                { key: 'p2ValorVenda', label: 'Valor de venda (opcional)', required: false },
+                { key: 'p2Desc',      label: 'Descrição do produto',         required: true  },
+                { key: 'p2ValorVenda',label: 'Preço de venda (opcional)',    required: false },
+                { key: 'p2Custo',     label: 'Preço de custo (opcional)',    required: false },
+                { key: 'p2Estoque',   label: 'Estoque (opcional)',            required: false },
               ]}
               values={mapping}
               onFieldChange={handleFieldChange}
