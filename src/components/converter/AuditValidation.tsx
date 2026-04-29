@@ -150,29 +150,29 @@ function runAudit(
 
     // Pre-compute column indices for every mapped field
     const oi = {
-        desc:       colIdx(origHeaders, mapping.origDesc),
+        desc: colIdx(origHeaders, mapping.origDesc),
         codInterno: isActive(mapping.origCodInterno) ? colIdx(origHeaders, mapping.origCodInterno) : -1,
-        codBarras:  isActive(mapping.origCodBarras)  ? colIdx(origHeaders, mapping.origCodBarras)  : -1,
-        ncm:        isActive(mapping.origNCM)         ? colIdx(origHeaders, mapping.origNCM)         : -1,
-        cst:        isActive(mapping.origCST)         ? colIdx(origHeaders, mapping.origCST)         : -1,
-        valorVenda: isActive(mapping.origValorVenda)  ? colIdx(origHeaders, mapping.origValorVenda)  : -1,
-        custo:      isActive(mapping.origCusto)       ? colIdx(origHeaders, mapping.origCusto)       : -1,
-        estoque:    isActive(mapping.origEstoque)     ? colIdx(origHeaders, mapping.origEstoque)     : -1,
-        unidade:    isActive(mapping.origUnidade)     ? colIdx(origHeaders, mapping.origUnidade)     : -1,
-        cest:       isActive(mapping.origCEST)        ? colIdx(origHeaders, mapping.origCEST)        : -1,
+        codBarras: isActive(mapping.origCodBarras) ? colIdx(origHeaders, mapping.origCodBarras) : -1,
+        ncm: isActive(mapping.origNCM) ? colIdx(origHeaders, mapping.origNCM) : -1,
+        cst: isActive(mapping.origCST) ? colIdx(origHeaders, mapping.origCST) : -1,
+        valorVenda: isActive(mapping.origValorVenda) ? colIdx(origHeaders, mapping.origValorVenda) : -1,
+        custo: isActive(mapping.origCusto) ? colIdx(origHeaders, mapping.origCusto) : -1,
+        estoque: isActive(mapping.origEstoque) ? colIdx(origHeaders, mapping.origEstoque) : -1,
+        unidade: isActive(mapping.origUnidade) ? colIdx(origHeaders, mapping.origUnidade) : -1,
+        cest: isActive(mapping.origCEST) ? colIdx(origHeaders, mapping.origCEST) : -1,
     };
 
     const gi = {
-        desc:       colIdx(genHeaders, mapping.genDesc),
+        desc: colIdx(genHeaders, mapping.genDesc),
         codInterno: isActive(mapping.genCodInterno) ? colIdx(genHeaders, mapping.genCodInterno) : -1,
-        codBarras:  isActive(mapping.genCodBarras)  ? colIdx(genHeaders, mapping.genCodBarras)  : -1,
-        ncm:        isActive(mapping.genNCM)         ? colIdx(genHeaders, mapping.genNCM)         : -1,
-        cst:        isActive(mapping.genCST)         ? colIdx(genHeaders, mapping.genCST)         : -1,
-        valorVenda: isActive(mapping.genValorVenda)  ? colIdx(genHeaders, mapping.genValorVenda)  : -1,
-        custo:      isActive(mapping.genCusto)       ? colIdx(genHeaders, mapping.genCusto)       : -1,
-        estoque:    isActive(mapping.genEstoque)     ? colIdx(genHeaders, mapping.genEstoque)     : -1,
-        unidade:    isActive(mapping.genUnidade)     ? colIdx(genHeaders, mapping.genUnidade)     : -1,
-        cest:       isActive(mapping.genCEST)        ? colIdx(genHeaders, mapping.genCEST)        : -1,
+        codBarras: isActive(mapping.genCodBarras) ? colIdx(genHeaders, mapping.genCodBarras) : -1,
+        ncm: isActive(mapping.genNCM) ? colIdx(genHeaders, mapping.genNCM) : -1,
+        cst: isActive(mapping.genCST) ? colIdx(genHeaders, mapping.genCST) : -1,
+        valorVenda: isActive(mapping.genValorVenda) ? colIdx(genHeaders, mapping.genValorVenda) : -1,
+        custo: isActive(mapping.genCusto) ? colIdx(genHeaders, mapping.genCusto) : -1,
+        estoque: isActive(mapping.genEstoque) ? colIdx(genHeaders, mapping.genEstoque) : -1,
+        unidade: isActive(mapping.genUnidade) ? colIdx(genHeaders, mapping.genUnidade) : -1,
+        cest: isActive(mapping.genCEST) ? colIdx(genHeaders, mapping.genCEST) : -1,
     };
 
     // Build searchable index from original rows
@@ -196,7 +196,7 @@ function runAudit(
     let comDivergencia = 0;
 
     genRows.forEach((genRow, genIdx) => {
-        const genDescRaw  = String(cellVal(genRow, gi.desc) ?? '');
+        const genDescRaw = String(cellVal(genRow, gi.desc) ?? '');
         const genDescNorm = normalizeText(genDescRaw);
         const genCodInterno = gi.codInterno >= 0
             ? String(cellVal(genRow, gi.codInterno) ?? '').trim()
@@ -223,9 +223,9 @@ function runAudit(
         }
 
         encontrados++;
-        const origRow     = origMatch.row;
+        const origRow = origMatch.row;
         const linhaGerada = genIdx + 2;
-        const descricao   = genDescRaw;
+        const descricao = genDescRaw;
         let hasDivergencia = false;
 
         const addDisc = (campo: string, orig: string, gen: string) => {
@@ -246,7 +246,7 @@ function runAudit(
         // ── Código Interno (exact) ─────────────────────────────────────────────
         if (oi.codInterno >= 0 && gi.codInterno >= 0) {
             const origCod = String(cellVal(origRow, oi.codInterno) ?? '').trim();
-            const genCod  = String(cellVal(genRow,  gi.codInterno) ?? '').trim();
+            const genCod = String(cellVal(genRow, gi.codInterno) ?? '').trim();
             if (origCod && genCod && origCod !== genCod) {
                 addDisc('Código Interno', origCod, genCod);
             }
@@ -255,7 +255,7 @@ function runAudit(
         // ── Código de Barras (opcional) ────────────────────────────────────────
         if (oi.codBarras >= 0 && gi.codBarras >= 0) {
             const origCB = String(cellVal(origRow, oi.codBarras) ?? '').trim();
-            const genCB  = String(cellVal(genRow,  gi.codBarras) ?? '').trim();
+            const genCB = String(cellVal(genRow, gi.codBarras) ?? '').trim();
             if (origCB && genCB && origCB !== genCB) {
                 addDisc('Código de Barras', origCB, genCB);
             }
@@ -264,7 +264,7 @@ function runAudit(
         // ── NCM (exact, somente dígitos) ───────────────────────────────────────
         if (oi.ncm >= 0 && gi.ncm >= 0) {
             const origNCM = String(cellVal(origRow, oi.ncm) ?? '').replace(/\D/g, '');
-            const genNCM  = String(cellVal(genRow,  gi.ncm) ?? '').replace(/\D/g, '');
+            const genNCM = String(cellVal(genRow, gi.ncm) ?? '').replace(/\D/g, '');
             if (origNCM && genNCM && origNCM !== genNCM) {
                 addDisc('Código NCM', String(cellVal(origRow, oi.ncm) ?? ''), String(cellVal(genRow, gi.ncm) ?? ''));
             }
@@ -273,7 +273,7 @@ function runAudit(
         // ── CST (exact) ────────────────────────────────────────────────────────
         if (oi.cst >= 0 && gi.cst >= 0) {
             const origCST = String(cellVal(origRow, oi.cst) ?? '').trim();
-            const genCST  = String(cellVal(genRow,  gi.cst) ?? '').trim();
+            const genCST = String(cellVal(genRow, gi.cst) ?? '').trim();
             if (origCST && genCST && origCST !== genCST) {
                 addDisc('CST', origCST, genCST);
             }
@@ -282,7 +282,7 @@ function runAudit(
         // ── Valor de Venda (tolerância ±0.05) ─────────────────────────────────
         if (oi.valorVenda >= 0 && gi.valorVenda >= 0) {
             const origVV = toNumber(cellVal(origRow, oi.valorVenda));
-            const genVV  = toNumber(cellVal(genRow,  gi.valorVenda));
+            const genVV = toNumber(cellVal(genRow, gi.valorVenda));
             if (Math.abs(origVV - genVV) > 0.05) {
                 addDisc('Valor de Venda', origVV.toFixed(2), genVV.toFixed(2));
             }
@@ -291,7 +291,7 @@ function runAudit(
         // ── Custo (tolerância ±0.05) ───────────────────────────────────────────
         if (oi.custo >= 0 && gi.custo >= 0) {
             const origC = toNumber(cellVal(origRow, oi.custo));
-            const genC  = toNumber(cellVal(genRow,  gi.custo));
+            const genC = toNumber(cellVal(genRow, gi.custo));
             if (Math.abs(origC - genC) > 0.05) {
                 addDisc('Custo', origC.toFixed(2), genC.toFixed(2));
             }
@@ -300,7 +300,7 @@ function runAudit(
         // ── Estoque (exact) ────────────────────────────────────────────────────
         if (oi.estoque >= 0 && gi.estoque >= 0) {
             const origE = toNumber(cellVal(origRow, oi.estoque));
-            const genE  = toNumber(cellVal(genRow,  gi.estoque));
+            const genE = toNumber(cellVal(genRow, gi.estoque));
             if (origE !== genE) {
                 addDisc('Quantidade em Estoque', origE.toString(), genE.toString());
             }
@@ -309,7 +309,7 @@ function runAudit(
         // ── Unidade (case-insensitive) ─────────────────────────────────────────
         if (oi.unidade >= 0 && gi.unidade >= 0) {
             const origU = String(cellVal(origRow, oi.unidade) ?? '').trim().toUpperCase();
-            const genU  = String(cellVal(genRow,  gi.unidade) ?? '').trim().toUpperCase();
+            const genU = String(cellVal(genRow, gi.unidade) ?? '').trim().toUpperCase();
             if (origU && genU && origU !== genU) {
                 addDisc('Unidade Entrada', origU, genU);
             }
@@ -318,7 +318,7 @@ function runAudit(
         // ── CEST (exact, somente dígitos) ──────────────────────────────────────
         if (oi.cest >= 0 && gi.cest >= 0) {
             const origCEST = String(cellVal(origRow, oi.cest) ?? '').replace(/\D/g, '');
-            const genCEST  = String(cellVal(genRow,  gi.cest) ?? '').replace(/\D/g, '');
+            const genCEST = String(cellVal(genRow, gi.cest) ?? '').replace(/\D/g, '');
             if (origCEST && genCEST && origCEST !== genCEST) {
                 addDisc('CEST', String(cellVal(origRow, oi.cest) ?? ''), String(cellVal(genRow, gi.cest) ?? ''));
             }
@@ -709,10 +709,10 @@ function AuditStepper({ currentStep }: { currentStep: number }) {
                 <div key={i} className="flex items-center gap-1 shrink-0">
                     <div
                         className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${i < currentStep
-                                ? 'bg-primary text-primary-foreground'
-                                : i === currentStep
-                                    ? 'bg-primary text-primary-foreground ring-4 ring-primary/20'
-                                    : 'bg-secondary text-secondary-foreground'
+                            ? 'bg-primary text-primary-foreground'
+                            : i === currentStep
+                                ? 'bg-primary text-primary-foreground ring-4 ring-primary/20'
+                                : 'bg-secondary text-secondary-foreground'
                             }`}
                     >
                         {i < currentStep ? '✓' : i + 1}
