@@ -272,8 +272,8 @@ function ColumnMappingCard({
                                     <span className="text-muted-foreground">— Não usar —</span>
                                 </SelectItem>
                             )}
-                            {headers.map((h) => (
-                                <SelectItem key={h} value={h}>
+                            {headers.filter((h) => h !== '').map((h, i) => (
+                                <SelectItem key={`${h}-${i}`} value={h}>
                                     {h}
                                 </SelectItem>
                             ))}
@@ -423,8 +423,8 @@ function ResultView({ result, sheet2FileName, onDownload }: ResultViewProps) {
                                         {entry.descricao}
                                     </span>
                                     <span className={`text-[9px] px-1 py-0.5 rounded font-bold shrink-0 ${entry.fase === 2
-                                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
-                                            : 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400'
+                                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
+                                        : 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400'
                                         }`}>
                                         F{entry.fase ?? 1}
                                     </span>
@@ -454,10 +454,10 @@ function MatchStepper({ currentStep }: { currentStep: number }) {
                 <div key={i} className="flex items-center gap-1 shrink-0">
                     <div
                         className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${i < currentStep
-                                ? 'bg-primary text-primary-foreground'
-                                : i === currentStep
-                                    ? 'bg-primary text-primary-foreground ring-4 ring-primary/20'
-                                    : 'bg-secondary text-secondary-foreground'
+                            ? 'bg-primary text-primary-foreground'
+                            : i === currentStep
+                                ? 'bg-primary text-primary-foreground ring-4 ring-primary/20'
+                                : 'bg-secondary text-secondary-foreground'
                             }`}
                     >
                         {i < currentStep ? '✓' : i + 1}
