@@ -24,13 +24,14 @@ const SeparadorCodigoBarras = lazy(() => import('@/components/converter/Separado
 const LimpadorEAN = lazy(() => import('@/components/converter/LimpadorEAN').then(m => ({ default: m.LimpadorEAN })));
 const FiltradorTamanhoEAN = lazy(() => import('@/components/converter/FiltradorTamanhoEAN').then(m => ({ default: m.FiltradorTamanhoEAN })));
 const ValidadorNCM = lazy(() => import('@/components/converter/ValidadorNCM').then(m => ({ default: m.ValidadorNCM })));
+const CorretorPlanilha = lazy(() => import('@/components/converter/CorretorPlanilha').then(m => ({ default: m.CorretorPlanilha })));
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { toast } from '@/components/ui/sonner';
-import { ArrowLeft, ArrowRight, History, FileSpreadsheet, Barcode, ShieldCheck, Scissors, ScanLine, Filter, ClipboardCheck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, History, FileSpreadsheet, Barcode, ShieldCheck, Scissors, ScanLine, Filter, ClipboardCheck, Wand2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
-type ToolMode = null | 'converter' | 'match' | 'audit' | 'units' | 'barsep' | 'cleaner' | 'barfilter' | 'ncmvalidator';
+type ToolMode = null | 'converter' | 'match' | 'audit' | 'units' | 'barsep' | 'cleaner' | 'barfilter' | 'ncmvalidator' | 'corrector';
 
 export default function Index() {
   const [toolMode, setToolMode] = useState<ToolMode>(null);
@@ -176,7 +177,7 @@ export default function Index() {
               <span className="text-muted-foreground text-sm">
                 /
                 <span className="ml-2 text-foreground font-medium">
-                  {toolMode === 'converter' ? 'Conversor ERP' : toolMode === 'match' ? 'Match Inteligente' : toolMode === 'audit' ? 'Auditoria de Exportação' : toolMode === 'units' ? 'Extrator de Unidades' : toolMode === 'barsep' ? 'Separador de Código de Barras' : toolMode === 'cleaner' ? 'Limpador EAN + Descrição' : toolMode === 'barfilter' ? 'Filtrar por Tamanho do Código de Barras' : 'Validador de NCM'}
+                  {toolMode === 'converter' ? 'Conversor ERP' : toolMode === 'match' ? 'Match Inteligente' : toolMode === 'audit' ? 'Auditoria de Exportação' : toolMode === 'units' ? 'Extrator de Unidades' : toolMode === 'barsep' ? 'Separador de Código de Barras' : toolMode === 'cleaner' ? 'Limpador EAN + Descrição' : toolMode === 'barfilter' ? 'Filtrar por Tamanho do Código de Barras' : toolMode === 'ncmvalidator' ? 'Validador de NCM' : 'Correção Inteligente de Planilha'}
                 </span>
               </span>
             )}
@@ -398,6 +399,28 @@ export default function Index() {
                     </p>
                   </Card>
 
+                  {/* Card: Correção Inteligente de Planilha */}
+                  <Card
+                    onClick={() => setToolMode('corrector')}
+                    className="p-6 cursor-pointer transition-all duration-200 hover:shadow-lg hover:bg-secondary/50 group flex flex-col border-orange-200 dark:border-orange-800"
+                  >
+                    <div className="flex items-center gap-1.5 mb-4">
+                      <span className="text-xs">⚙️</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                        Ferramentas
+                      </span>
+                    </div>
+                    <div className="w-12 h-12 rounded-xl bg-orange-100 dark:bg-orange-900/50 text-orange-600 dark:text-orange-400 flex items-center justify-center mb-3 group-hover:bg-orange-600 group-hover:text-white transition-colors">
+                      <Wand2 className="w-6 h-6" />
+                    </div>
+                    <h3 className="font-heading font-semibold text-base text-foreground leading-snug">
+                      Correção Inteligente de Planilha
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-1.5 flex-1">
+                      Compara uma planilha desorganizada com uma base correta e ajusta automaticamente descrições, unidades, estoque e preços
+                    </p>
+                  </Card>
+
                 </div>
               </motion.div>
             )}
@@ -542,6 +565,13 @@ export default function Index() {
             {toolMode === 'ncmvalidator' && (
               <motion.div key="ncmvalidator" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <ValidadorNCM onBack={() => setToolMode(null)} />
+              </motion.div>
+            )}
+
+            {/* ── Correção Inteligente de Planilha ── */}
+            {toolMode === 'corrector' && (
+              <motion.div key="corrector" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <CorretorPlanilha onBack={() => setToolMode(null)} />
               </motion.div>
             )}
 
