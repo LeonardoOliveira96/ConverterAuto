@@ -23,7 +23,7 @@ import {
     XCircle,
     ShieldCheck,
 } from 'lucide-react';
-import { SpreadsheetRow } from '@/lib/converter-types';
+import { SpreadsheetRow, SpreadsheetCell } from '@/lib/converter-types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,6 +74,8 @@ type AuditResult = {
     naoEncontradosList: string[];
 };
 
+type MatchStrategy = 'codInterno' | 'descricao' | 'ambos';
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function normalizeText(text: unknown): string {
@@ -81,6 +83,22 @@ function normalizeText(text: unknown): string {
         .toUpperCase()
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+/**
+ * Normalização mais agressiva para comparação de descrições.
+ * Expande abreviações comuns (c/ → COM, s/ → SEM, p/ → PARA) e remove
+ * caracteres especiais, de modo que variações de exportação não gerem
+ * falsos positivos de divergência.
+ */
+function normalizeForComparison(text: unknown): string {
+    return normalizeText(text)
+        .replace(/\bC\/\s*/g, 'COM ')
+        .replace(/\bS\/\s*/g, 'SEM ')
+        .replace(/\bP\/\s*/g, 'PARA ')
+        .replace(/[^A-Z0-9 ]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
 }
@@ -145,6 +163,7 @@ function runAudit(
     genRows: SpreadsheetRow[],
     genHeaders: string[],
     mapping: AuditMapping,
+    strategy: MatchStrategy,
 ): AuditResult {
     const isActive = (val: string) => Boolean(val) && val !== '__none__';
 
@@ -202,15 +221,16 @@ function runAudit(
             ? String(cellVal(genRow, gi.codInterno) ?? '').trim()
             : '';
 
-        // ── Match: prioridade 1 = código interno exato ─────────────────────────
+        // ── Match: estratégia configurada pelo usuário ──────────────────────
         let origMatch: (typeof origItems)[0] | null = null;
 
-        if (genCodInterno && oi.codInterno >= 0) {
-            origMatch = origItems.find((o) => o.codInterno && o.codInterno === genCodInterno) ?? null;
+        if (strategy === 'codInterno' || strategy === 'ambos') {
+            if (genCodInterno && oi.codInterno >= 0) {
+                origMatch = origItems.find((o) => o.codInterno && o.codInterno === genCodInterno) ?? null;
+            }
         }
 
-        // ── Match: prioridade 2 = fuzzy por descrição ──────────────────────────
-        if (!origMatch) {
+        if (!origMatch && (strategy === 'descricao' || strategy === 'ambos')) {
             const results = fuse.search(genDescNorm);
             if (results.length > 0 && (results[0].score ?? 1) < 0.35) {
                 origMatch = results[0].item;
@@ -233,9 +253,10 @@ function runAudit(
             hasDivergencia = true;
         };
 
-        // ── Descrição ──────────────────────────────────────────────────────────
-        const origDescNorm = normalizeText(cellVal(origRow, oi.desc));
-        if (origDescNorm !== genDescNorm) {
+        // ── Descrição (comparação normalizada — ignora acentos e abreviações c/, s/) ────
+        const origDescComp = normalizeForComparison(cellVal(origRow, oi.desc));
+        const genDescComp = normalizeForComparison(genDescRaw);
+        if (origDescComp !== genDescComp) {
             addDisc(
                 'Descrição do Produto',
                 String(cellVal(origRow, oi.desc) ?? ''),
@@ -534,8 +555,8 @@ function ColumnMappingCard({ title, accent, headers, fields, values, onChange }:
                                         <span className="text-muted-foreground">— Não usar —</span>
                                     </SelectItem>
                                 )}
-                                {headers.map((h) => (
-                                    <SelectItem key={h} value={h}>
+                                {headers.filter((h) => h !== '').map((h, i) => (
+                                    <SelectItem key={`${h}-${i}`} value={h}>
                                         {h}
                                     </SelectItem>
                                 ))}
@@ -801,6 +822,7 @@ export function AuditValidation({ onBack }: AuditValidationProps) {
     const [genError, setGenError] = useState('');
 
     const [mapping, setMapping] = useState<AuditMapping>(EMPTY_MAPPING);
+    const [matchStrategy, setMatchStrategy] = useState<MatchStrategy>('ambos');
     const [result, setResult] = useState<AuditResult | null>(null);
 
     const handleOrigFile = async (file: File) => {
@@ -832,7 +854,7 @@ export function AuditValidation({ onBack }: AuditValidationProps) {
 
     const handleRunAudit = () => {
         if (!origData || !genData) return;
-        const res = runAudit(origData.rows, origData.headers, genData.rows, genData.headers, mapping);
+        const res = runAudit(origData.rows, origData.headers, genData.rows, genData.headers, mapping, matchStrategy);
         setResult(res);
         setStep(2);
     };
@@ -849,6 +871,7 @@ export function AuditValidation({ onBack }: AuditValidationProps) {
         setOrigError('');
         setGenError('');
         setMapping(EMPTY_MAPPING);
+        setMatchStrategy('ambos');
         setResult(null);
     };
 
@@ -922,6 +945,56 @@ export function AuditValidation({ onBack }: AuditValidationProps) {
                             Campos marcados com <span className="text-destructive font-medium">*</span> são obrigatórios.
                         </p>
                     </div>
+
+                    {/* ── Estratégia de correspondência ── */}
+                    <Card className="p-5 flex flex-col gap-3">
+                        <p className="font-heading font-semibold text-sm text-foreground border-b pb-3">
+                            Estratégia de correspondência
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                            Como os produtos da planilha gerada serão localizados na original para comparação.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-1">
+                            {([
+                                {
+                                    value: 'ambos' as MatchStrategy,
+                                    label: 'Código Interno + Descrição',
+                                    desc: 'Tenta pelo código primeiro; usa descrição como fallback (recomendado)',
+                                },
+                                {
+                                    value: 'codInterno' as MatchStrategy,
+                                    label: 'Apenas Código Interno',
+                                    desc: 'Correspondência exata pelo código. Itens sem código ficam não encontrados',
+                                },
+                                {
+                                    value: 'descricao' as MatchStrategy,
+                                    label: 'Apenas Descrição',
+                                    desc: 'Correspondência fuzzy pela descrição. Ignora o código interno',
+                                },
+                            ] as const).map(({ value, label, desc }) => (
+                                <button
+                                    key={value}
+                                    type="button"
+                                    onClick={() => setMatchStrategy(value)}
+                                    className={`text-left rounded-lg border p-4 transition-all duration-150 flex flex-col gap-1 ${matchStrategy === value
+                                        ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                                        : 'border-border hover:border-primary/50 hover:bg-secondary/40'
+                                        }`}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${matchStrategy === value ? 'border-primary' : 'border-muted-foreground'
+                                            }`}>
+                                            {matchStrategy === value && (
+                                                <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                                            )}
+                                        </div>
+                                        <span className="text-xs font-semibold text-foreground">{label}</span>
+                                    </div>
+                                    <p className="text-[11px] text-muted-foreground pl-5 leading-snug">{desc}</p>
+                                </button>
+                            ))}
+                        </div>
+                    </Card>
 
                     <ColumnMappingCard
                         title="Planilha Original"
